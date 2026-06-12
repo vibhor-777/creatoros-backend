@@ -1,18 +1,21 @@
 const mongoose = require('mongoose');
 
-const connectDatabase = async () => {
-  const mongodbUri = process.env.MONGODB_URI;
-  if (!mongodbUri) {
-    throw new Error('MONGODB_URI is required');
+const connectDB = async () => {
+  try {
+    // Fallback support: Dono me se jo bhi key mile, use connect karo
+    const dbURI = process.env.MONGODB_URI || process.env.MONGO_URI;
+    
+    if (!dbURI) {
+      console.error("CRITICAL ERROR: Database URI string missing in Env Variables!");
+      process.exit(1); 
+    }
+
+    const conn = await mongoose.connect(dbURI);
+    console.log(`MongoDB Connected Safely: ${conn.connection.host}`);
+  } catch (error) {
+    console.error(`Database Connection Initialization Failed: ${error.message}`);
+    process.exit(1); // Production ko clean exit do taaki log generate ho sakein
   }
-
-  const connection = await mongoose.connect(mongodbUri, {
-    autoIndex: process.env.NODE_ENV !== 'production',
-    maxPoolSize: 10,
-    serverSelectionTimeoutMS: 10000
-  });
-
-  return connection;
 };
 
-module.exports = { connectDatabase };
+module.exports = connectDB;
