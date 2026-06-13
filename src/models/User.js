@@ -50,6 +50,23 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false
     },
+    // --- NEW: Verification system fields ---
+    verificationStatus: {
+      type: String,
+      enum: ['unverified', 'pending', 'verified', 'rejected'],
+      default: 'unverified'
+    },
+    verificationMethod: {
+      type: String,
+      enum: ['email', 'digilocker', 'id_card'],
+      default: 'email'
+    },
+    idCardUrl: {
+      type: String,
+      trim: true,
+      default: null
+    },
+    // --- END NEW fields ---
     avatarUrl: {
       type: String,
       trim: true
