@@ -16,9 +16,12 @@ connectDB();
 // --- GLOBAL PRODUCTION MIDDLEWARES ---
 app.use(helmet()); // Secures HTTP headers to protect against web vulnerabilities
 app.use(cors({
-  origin: '*', // Adjust this to your frontend domain in production for tight security
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: [
+    'https://studio-z.in',
+    'https://www.studio-z.in',
+    'https://olivedrab-spider-629003.hostingersite.com'
+  ],
+  credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
