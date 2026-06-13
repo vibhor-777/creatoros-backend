@@ -28,9 +28,37 @@ const register = asyncHandler(async (req, res) => {
     return sendError(res, 'Provide a valid email', 400);
   }
 
-  if (!isEduEmail(normalizedEmail)) {
-    return sendError(res, 'Only educational/student emails are allowed', 403);
+  // --- VERIFICATION LOGIC START ---
+  const isEdu = isEduEmail(normalizedEmail);
+  const verificationMethod = req.body.verificationMethod || 'email';
+
+  // Block if not edu email AND no alternative method selected
+  if (!isEdu && verificationMethod === 'email') {
+    return sendError(
+      res,
+      'Only .edu.in or .ac.in emails are allowed. Alternatively use DigiLocker or upload your School ID card.',
+      403
+    );
   }
+
+  // Set verification status based on method
+  let verificationStatus = 'unverified';
+  let eduVerified = false;
+
+  if (isEdu) {
+    // .EDU email — instant verification
+    verificationStatus = 'verified';
+    eduVerified = true;
+  } else if (verificationMethod === 'digilocker') {
+    // DigiLocker — government verified, instant
+    verificationStatus = 'verified';
+    eduVerified = true;
+  } else if (verificationMethod === 'id_card') {
+    // School ID card — pending 24hr manual review
+    verificationStatus = 'pending';
+    eduVerified = false;
+  }
+  // --- VERIFICATION LOGIC END ---
 
   const existing = await User.findOne({
     $or: [{ email: normalizedEmail }, { username: username.toLowerCase() }]
@@ -46,7 +74,10 @@ const register = asyncHandler(async (req, res) => {
     email: normalizedEmail,
     password,
     institution,
-    eduVerified: true,
+    eduVerified,
+    verificationStatus,
+    verificationMethod,
+    idCardUrl: req.body.idCardUrl || null,
     role: 'creator'
   });
 
@@ -66,7 +97,9 @@ const register = asyncHandler(async (req, res) => {
         username: user.username,
         email: user.email,
         role: user.role,
-        wallet: user.wallet
+        wallet: user.wallet,
+        eduVerified: user.eduVerified,
+        verificationStatus: user.verificationStatus
       },
       accessToken,
       refreshToken
