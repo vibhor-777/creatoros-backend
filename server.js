@@ -26,6 +26,9 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Serve uploaded files (product files, ID cards, etc.) statically
+app.use('/uploads', express.static('uploads'));
+
 // Rate Limiting to mitigate Denial of Service (DoS) attacks
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
@@ -44,8 +47,18 @@ app.get('/', (req, res) => {
   });
 });
 
-// Dynamic Route Registrations (Add your custom API endpoints below)
-// Example: app.use('/api/v1/auth', require('./src/routes/authRoutes'));
+// --- DYNAMIC ROUTE REGISTRATIONS ---
+app.use('/api/v1/auth', require('./src/routes/authRoutes'));
+app.use('/api/v1/users', require('./src/routes/userRoutes'));
+app.use('/api/v1/products', require('./src/routes/productRoutes'));
+app.use('/api/v1/transactions', require('./src/routes/transactionRoutes'));
+app.use('/api/v1/bounties', require('./src/routes/bountyRoutes'));
+app.use('/api/v1/wallet', require('./src/routes/walletRoutes'));
+app.use('/api/v1/services', require('./src/routes/serviceRoutes'));
+app.use('/api/v1/health', require('./src/routes/healthRoutes'));
+app.use('/api/v1/ai', require('./src/routes/aiRoutes'));
+app.use('/api/v1/upload', require('./src/routes/uploadRoutes'));
+app.use('/api/v1/chat', require('./src/routes/chatRoutes'));
 
 // --- GLOBAL ERROR HANDLING & NOT FOUND MIDDLEWARES ---
 // 404 Route Catch-all Handler
