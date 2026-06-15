@@ -51,6 +51,20 @@ const userSchema = new mongoose.Schema(
       default: false
     },
     // --- NEW: Verification system fields ---
+    // --- STUDIO-Z BUSINESS MODEL ADDITIONS ---
+    // 💎 Subscription Tiers (Day 1 Feature)
+    subscriptionTier: { 
+      type: String, 
+      enum: ['Starter', 'Core', 'Elite', 'Nexus'], 
+      default: 'Starter' 
+    },
+    
+    // 💰 Phase 5 Prep: NeoBank Wallet Tracker & Escrow limits
+    lifetimeEarnings: { 
+      type: Number, 
+      default: 0 
+    },
+    // --- END BUSINESS MODEL ADDITIONS ---
     verificationStatus: {
       type: String,
       enum: ['unverified', 'pending', 'verified', 'rejected'],
