@@ -3,14 +3,13 @@ const router = express.Router();
 
 // --- DEPENDENCY INJECTIONS ---
 const { auth } = require('../middleware/auth');
-const { uploadImage } = require('../middleware/upload');
 
-// Optional: Keep this imported if you plan to move the logic to a controller later
-// const { uploadIdCard } = require('../controllers/uploadController');
+// [ARCHITECTURAL FIX]: Removed curly braces. Direct import assumes module.exports = upload;
+const upload = require('../middleware/upload'); 
 
 // --- ROUTE DEFINITIONS ---
 // The pipeline strictly executes: 1. Auth Check -> 2. File Parse -> 3. Response Callback
-router.post('/file', auth, uploadImage.single('document'), (req, res) => {
+router.post('/file', auth, upload.single('document'), (req, res) => {
     
     // Safety Trap: Prevent crashes if the payload is empty
     if (!req.file) {
@@ -25,7 +24,7 @@ router.post('/file', auth, uploadImage.single('document'), (req, res) => {
         success: true,
         message: "File uploaded successfully.",
         fileName: req.file.filename,
-        fileUrl: req.file.path // Path depends on your specific Multer storage config
+        fileUrl: req.file.path 
     });
 });
 
