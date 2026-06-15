@@ -19,12 +19,12 @@ router.post('/file', auth, upload.single('document'), (req, res) => {
         });
     }
 
-    // Execution Success: Return the metadata to the client
-    return res.status(200).json({
-        success: true,
-        message: "File uploaded successfully.",
-        fileName: req.file.filename,
-        fileUrl: req.file.path 
+    // --- OVERWRITE LINES 23 TO 28 WITH THIS ENGINE LOGIC ---
+return res.status(200).json({
+    success: true,
+    message: "File uploaded successfully.",
+    fileName: req.file.filename,
+    fileUrl: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
     });
 });
 
