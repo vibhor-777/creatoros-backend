@@ -12,6 +12,7 @@ console.log("[TELEMETRY 03] Database configuration loaded.");
 
 dotenv.config();
 const app = express();
+app.set('trust proxy', true);
 
 app.use(helmet());
 app.use(cors({
