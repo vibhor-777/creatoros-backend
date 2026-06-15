@@ -12,6 +12,6 @@ const aiLimiter = rateLimit({
 
 console.log("[DEBUG VARS] protect type:", typeof protect);
 console.log("[DEBUG VARS] optimizeListing type:", typeof optimizeListing);
-router.post('/optimize', protect, aiLimiter, optimizeListing);
+router.post('/optimize', auth, aiLimiter, optimizeListing);
 
 module.exports = router;
