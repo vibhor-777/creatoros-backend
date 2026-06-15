@@ -19,7 +19,7 @@ app.use(cors({
   origin: [
     'https://studio-z.in',
     'https://www.studio-z.in',
-    'https://olivedrab-spider-629003.hostingersite.com'
+    'https://green-eel-423839.hostingersite.com/'
   ],
   credentials: true
 }));
