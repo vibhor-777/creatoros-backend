@@ -10,6 +10,8 @@ const aiLimiter = rateLimit({
   message: { success: false, message: 'AI request limit reached. Try again later.' }
 });
 
+console.log("[DEBUG VARS] protect type:", typeof protect);
+console.log("[DEBUG VARS] optimizeListing type:", typeof optimizeListing);
 router.post('/optimize', protect, aiLimiter, optimizeListing);
 
 module.exports = router;
