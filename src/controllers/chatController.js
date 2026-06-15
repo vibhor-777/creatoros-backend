@@ -3,30 +3,43 @@ const { sendSuccess, sendError, asyncHandler } = require('../utils/responseHelpe
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
+const SYSTEM_CONTEXT = `You are StudioZ Assistant, a helpful guide for India's student 
+marketplace. Help users with: selling notes/products, verification process (.EDU Email - 
+instant, DigiLocker - instant, or School ID upload - 24hr review), subscription tiers 
+(Starter free with 5% fee, Core ₹199/month with 3% fee, Elite ₹399/month with 1.5% fee, 
+Nexus ₹599/month with 0% fee), and general platform questions. Keep responses short 
+(2-3 sentences), friendly, and simple. If asked about something outside StudioZ, 
+politely redirect to platform topics.`;
+
 const chatWithAssistant = asyncHandler(async (req, res) => {
   const { message, history } = req.body;
 
   if (!message) {
-    return sendError(res, 'Message is required', 400);
+    return sendError(res, 'message is required', 400);
   }
 
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-
-  const systemContext = `You are StudioZ Assistant, a helpful guide for India's student 
-marketplace. Help users with: selling notes/products, verification process (EDU email, 
-DigiLocker, or School ID), subscription tiers (Starter free, Core ₹199, Elite ₹399, 
-Nexus ₹599), and general platform questions. Keep responses short, friendly, and in 
-simple language. If asked about something outside StudioZ, politely redirect.`;
-
-  const chat = model.startChat({
-    history: history || [],
-    systemInstruction: systemContext
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-1.5-flash',
+    systemInstruction: SYSTEM_CONTEXT
   });
 
-  const result = await chat.sendMessage(message);
-  const reply = result.response.text();
+  try {
+    const chat = model.startChat({
+      history: Array.isArray(history) ? history : []
+    });
 
-  return sendSuccess(res, { reply }, 'Response generated');
+    const result = await chat.sendMessage(message);
+    const reply = result.response.text();
+
+    return sendSuccess(res, { reply }, 'Response generated');
+  } catch (err) {
+    console.error('Chat error:', err.message);
+    return sendSuccess(
+      res,
+      { reply: "Sorry, I'm having trouble right now. Please try again in a moment." },
+      'Fallback response'
+    );
+  }
 });
 
 module.exports = { chatWithAssistant };
