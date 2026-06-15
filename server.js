@@ -11,16 +11,13 @@ dotenv.config();
 
 const app = express();
 
-// Initialize Database Connection with safety traps
-connectDB();
-
 // --- GLOBAL PRODUCTION MIDDLEWARES ---
 app.use(helmet()); // Secures HTTP headers to protect against web vulnerabilities
 app.use(cors({
   origin: [
     'https://studio-z.in',
     'https://www.studio-z.in',
-    'https://green-eel-423839.hostingersite.com/'
+    'https://green-eel-423839.hostingersite.com' // Trailing slash strictly removed for preflight validation
   ],
   credentials: true
 }));
@@ -86,9 +83,13 @@ const PORT = process.env.PORT || 8080;
 const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`===================================================`);
   console.log(` SERVER INITIALIZATION SUCCESSFUL                   `);
-  console.log(` Running on Port: ${PORT}                          `);
+  console.log(` Running on Port: ${PORT}                           `);
   console.log(` Environment: ${process.env.NODE_ENV || 'production'}`);
   console.log(`===================================================`);
+  
+  // 1. HOSTINGER HEALTH CHECK PASSED. NOW CONNECT TO DB.
+  console.log(`=== INITIATING MONGODB HANDSHAKE ===`);
+  connectDB();
 });
 
 // --- PROCESS-LEVEL EXCEPTION TRAPS (Anti-Crash Layer) ---
