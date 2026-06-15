@@ -4,6 +4,6 @@ const { auth } = require('../middleware/auth');
 const { uploadImage } = require('../middleware/upload')
 const { uploadIdCard } = require('../controllers/uploadController');
 
-router.post('/id-card', protect, uploadImage.single('idCard'), uploadIdCard);
+router.post('/file', auth, upload.single('document'), ... )
 
 module.exports = router;
