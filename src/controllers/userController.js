@@ -133,7 +133,7 @@ const moderateReport = asyncHandler(async (req, res) => {
 // ─── ADMIN DETAILED USER LIST CONTROLLER ────────────────────────────────────
 const listAllUsersForAdmin = asyncHandler(async (req, res) => {
   const users = await User.find()
-    .select('fullName username email role verificationStatus eduVerified createdAt idCardUrl verificationMethod')
+    .select('fullName username email role verificationStatus eduVerified createdAt idCardUrl verificationMethod subscriptionTier')
     .sort({ createdAt: -1 });
 
   const usersWithActivity = await Promise.all(
@@ -160,6 +160,26 @@ const listAllUsersForAdmin = asyncHandler(async (req, res) => {
   return sendSuccess(res, { users: usersWithActivity }, 'All users with activity list fetched for admin');
 });
 
+const updateUserSubscriptionForAdmin = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const { subscriptionTier } = req.body;
+
+  const validTiers = ['Starter', 'Core', 'Elite', 'Nexus'];
+  if (!subscriptionTier || !validTiers.includes(subscriptionTier)) {
+    return sendError(res, 'Invalid subscription tier. Must be Starter, Core, Elite, or Nexus', 400);
+  }
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return sendError(res, 'User not found', 404);
+  }
+
+  user.subscriptionTier = subscriptionTier;
+  await user.save();
+
+  return sendSuccess(res, { user }, `User subscription tier updated to ${subscriptionTier} successfully`);
+});
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -169,6 +189,7 @@ module.exports = {
   reportUser,
   listReportsForAdmin,
   moderateReport,
-  listAllUsersForAdmin
+  listAllUsersForAdmin,
+  updateUserSubscriptionForAdmin
 };
 

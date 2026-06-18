@@ -12,6 +12,7 @@ router.patch('/me', auth, userController.updateProfile);
 router.get('/pending-verifications', auth, authorize('admin'), userController.getPendingVerifications);
 router.post('/:userId/verify', auth, authorize('admin'), userController.verifyUser);
 router.get('/admin/all', auth, authorize('admin'), userController.listAllUsersForAdmin);
+router.post('/admin/users/:userId/subscription', auth, authorize('admin'), userController.updateUserSubscriptionForAdmin);
 
 // User reporting routes
 router.post('/:userId/report', auth, userController.reportUser);
