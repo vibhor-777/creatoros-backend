@@ -53,6 +53,7 @@ try {
   app.use('/api/v1/ai', require('./src/routes/aiRoutes'));
   app.use('/api/v1/upload', require('./src/routes/uploadRoutes'));
   app.use('/api/v1/chat', require('./src/routes/chatRoutes'));
+  app.use('/api/v1/stats', require('./src/routes/statsRoutes'));
   console.log("[TELEMETRY 06] All dynamic routes successfully mounted.");
 } catch (routeError) {
   console.error("=================================================");
