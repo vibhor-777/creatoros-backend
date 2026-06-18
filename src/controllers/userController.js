@@ -28,11 +28,7 @@ const updateProfile = asyncHandler(async (req, res) => {
 });
 
 const listCreators = asyncHandler(async (req, res) => {
-  const creators = await User.find({ 
-    role: { $in: ['creator', 'student'] }, 
-    isActive: true, 
-    verificationStatus: 'verified' 
-  })
+  const creators = await User.find({ role: { $in: ['creator', 'student'] }, isActive: true })
     .select('fullName username bio avatarUrl stats')
     .sort({ 'stats.rating': -1, createdAt: -1 })
     .limit(100);
@@ -40,8 +36,40 @@ const listCreators = asyncHandler(async (req, res) => {
   return sendSuccess(res, { creators, count: creators.length }, 'Creators listed');
 });
 
+const getPendingVerifications = asyncHandler(async (req, res) => {
+  const users = await User.find({ verificationStatus: 'pending' })
+    .select('fullName username email institution idCardUrl verificationMethod');
+  return sendSuccess(res, { users }, 'Pending verifications fetched');
+});
+
+const verifyUser = asyncHandler(async (req, res) => {
+  const { userId } = req.params;
+  const { action, reason } = req.body; // 'approve' or 'deny'
+
+  const user = await User.findById(userId);
+  if (!user) {
+    return sendError(res, 'User not found', 404);
+  }
+
+  if (action === 'approve') {
+    user.verificationStatus = 'verified';
+    user.eduVerified = true;
+    user.rejectionReason = null;
+  } else {
+    user.verificationStatus = 'rejected';
+    user.eduVerified = false;
+    user.rejectionReason = reason || 'No reason provided';
+  }
+
+  await user.save();
+  return sendSuccess(res, { user }, `User verification ${action}d successfully`);
+});
+
 module.exports = {
   getProfile,
   updateProfile,
-  listCreators
+  listCreators,
+  getPendingVerifications,
+  verifyUser
 };
+

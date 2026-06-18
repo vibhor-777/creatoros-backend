@@ -9,7 +9,7 @@ const normalizeEmail = (email) => {
 };
 
 const getAllowedEduDomains = () => {
-    const raw = process.env.EDU_DOMAIN_WHITELIST || process.env.EDU_EMAIL_DOMAINS || 'edu.in,ac.in';
+  const raw = process.env.EDU_DOMAIN_WHITELIST || 'edu.in,ac.in';
   return raw
     .split(',')
     .map((domain) => domain.trim().toLowerCase())

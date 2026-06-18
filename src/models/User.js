@@ -80,6 +80,11 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: null
     },
+    rejectionReason: {
+      type: String,
+      trim: true,
+      default: null
+    },
     // --- END NEW fields ---
     avatarUrl: {
       type: String,

@@ -7,6 +7,12 @@ const eduVerify = (req, res, next) => {
     return next();
   }
 
+  // Bypass email verification check if registered via ID Card or DigiLocker
+  const method = req.body.verificationMethod || 'email';
+  if (method === 'digilocker' || method === 'id_card') {
+    return next();
+  }
+
   const email = req.body.email || req.user?.email;
   if (!email) {
     return sendError(res, 'Email is required for verification', 400);
