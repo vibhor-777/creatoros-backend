@@ -65,9 +65,12 @@ const transactionSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['pending', 'paid', 'failed', 'refunded', 'cancelled'],
+      enum: ['pending', 'paid', 'on_hold', 'released', 'failed', 'refunded', 'cancelled'],
       default: 'pending',
       index: true
+    },
+    holdReleaseAt: {
+      type: Date
     },
     metadata: {
       type: mongoose.Schema.Types.Mixed,
