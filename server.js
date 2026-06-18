@@ -15,12 +15,28 @@ const app = express();
 app.set('trust proxy', true);
 
 app.use(helmet());
+const allowedOrigins = [
+  'https://studio-z.in',
+  'https://www.studio-z.in',
+  'https://admin.studio-z.in',
+  'https://www.admin.studio-z.in',
+  'https://green-eel-423839.hostingersite.com',
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:8080',
+  'http://127.0.0.1:5500',
+  'http://127.0.0.1:8080'
+];
+
 app.use(cors({
-  origin: [
-    'https://studio-z.in',
-    'https://www.studio-z.in',
-    'https://green-eel-423839.hostingersite.com'
-  ],
+  origin: (origin, callback) => {
+    // Allow local files (null origin) and dev hosts in development/testing
+    if (!origin || allowedOrigins.includes(origin) || origin === 'null') {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -53,7 +69,6 @@ try {
   app.use('/api/v1/ai', require('./src/routes/aiRoutes'));
   app.use('/api/v1/upload', require('./src/routes/uploadRoutes'));
   app.use('/api/v1/chat', require('./src/routes/chatRoutes'));
-  app.use('/api/v1/stats', require('./src/routes/statsRoutes'));
   console.log("[TELEMETRY 06] All dynamic routes successfully mounted.");
 } catch (routeError) {
   console.error("=================================================");

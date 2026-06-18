@@ -131,7 +131,19 @@ const login = asyncHandler(async (req, res) => {
   const accessToken = signAccessToken(user._id.toString());
   const refreshToken = signRefreshToken(user._id.toString());
 
-  return sendSuccess(res, { accessToken, refreshToken }, 'Login successful');
+  return sendSuccess(res, {
+    accessToken,
+    refreshToken,
+    user: {
+      id: user._id,
+      fullName: user.fullName,
+      username: user.username,
+      email: user.email,
+      role: user.role,
+      eduVerified: user.eduVerified,
+      verificationStatus: user.verificationStatus
+    }
+  }, 'Login successful');
 });
 
 const refreshToken = asyncHandler(async (req, res) => {
@@ -155,9 +167,65 @@ const getMe = asyncHandler(async (req, res) => {
   return sendSuccess(res, { user: req.user }, 'Profile fetched');
 });
 
+// ── One-time Admin Password Force-Reset ──────────────────────────────────────
+// Call: POST /api/v1/auth/admin-setup  { "setupKey": "sz-admin-init-2024" }
+const adminSetup = asyncHandler(async (req, res) => {
+  const { setupKey } = req.body;
+  const SETUP_KEY = process.env.ADMIN_SETUP_KEY || 'sz-admin-init-2024';
+
+  if (setupKey !== SETUP_KEY) {
+    return sendError(res, 'Unauthorized', 403);
+  }
+
+  const bcrypt = require('bcryptjs');
+  const Wallet = require('../models/Wallet');
+
+  const ADMIN_EMAIL = 'admin@studio-z.in';
+  const ADMIN_PASS  = 'studio@1234554321';
+  const hashedPass  = await bcrypt.hash(ADMIN_PASS, 12);
+
+  let user = await User.findOne({ email: ADMIN_EMAIL }).select('+password');
+
+  if (!user) {
+    // Create fresh admin user
+    user = new User({
+      fullName: 'StudioZ Admin',
+      username: 'studiozadmin',   // no hyphen — schema: ^[a-z0-9_]+$
+      email: ADMIN_EMAIL,
+      password: ADMIN_PASS, // pre-save hook will hash
+      role: 'admin',
+      eduVerified: true,
+      verificationStatus: 'verified',
+      verificationMethod: 'email'
+    });
+    const wallet = await Wallet.create({ user: user._id });
+    user.wallet = wallet._id;
+    await user.save();
+    return sendSuccess(res, { created: true, email: ADMIN_EMAIL }, 'Admin user created');
+  }
+
+  // Force update password via updateOne (bypasses pre-save hook, uses pre-hashed value)
+  await User.updateOne(
+    { _id: user._id },
+    { $set: { password: hashedPass, role: 'admin', eduVerified: true, verificationStatus: 'verified' } }
+  );
+
+  // Verify the update worked
+  const verify = await User.findOne({ email: ADMIN_EMAIL }).select('+password');
+  const match = await bcrypt.compare(ADMIN_PASS, verify.password);
+
+  return sendSuccess(res, {
+    reset: true,
+    email: ADMIN_EMAIL,
+    passwordVerified: match,
+    role: verify.role
+  }, match ? 'Admin password reset successfully — login will work now' : 'Reset failed — contact developer');
+});
+
 module.exports = {
   register,
   login,
   refreshToken,
-  getMe
+  getMe,
+  adminSetup
 };
