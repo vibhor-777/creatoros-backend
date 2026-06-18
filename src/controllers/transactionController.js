@@ -126,5 +126,6 @@ const releaseTransaction = asyncHandler(async (req, res) => {
 module.exports = {
   createPaymentOrder,
   verifyPayment,
-  getMyTransactions
+  getMyTransactions,
+  releaseTransaction
 };
