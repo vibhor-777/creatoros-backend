@@ -88,8 +88,14 @@ const listProducts = asyncHandler(async (req, res) => {
 
   const query = {
     isPublished: true,
-    'moderation.status': { $ne: 'rejected' }
+    $or: [
+      { 'moderation.status': 'approved' }
+    ]
   };
+
+  if (req.user) {
+    query.$or.push({ creator: req.user._id });
+  }
 
   if (category) query.category = category;
   if (phase) query.phase = phase;
@@ -188,11 +194,49 @@ const downloadProduct = asyncHandler(async (req, res) => {
   return res.download(filePath);
 });
 
+const getPendingProductsForAdmin = asyncHandler(async (req, res) => {
+  const products = await Product.find({ 'moderation.status': 'pending' })
+    .populate('creator', 'fullName username email')
+    .sort({ createdAt: -1 });
+
+  return sendSuccess(res, { products }, 'Pending products fetched');
+});
+
+const moderateProduct = asyncHandler(async (req, res) => {
+  const { productId } = req.params;
+  const { action, reason } = req.body; // 'approve' or 'reject'
+
+  const product = await Product.findById(productId);
+  if (!product) {
+    return sendError(res, 'Product not found', 404);
+  }
+
+  if (action === 'approve') {
+    product.moderation.status = 'approved';
+    product.moderation.reason = null;
+    product.isPublished = true;
+  } else if (action === 'reject') {
+    product.moderation.status = 'rejected';
+    product.moderation.reason = reason || 'Does not comply with community guidelines';
+    product.isPublished = false;
+  } else {
+    return sendError(res, 'Invalid moderation action', 400);
+  }
+
+  product.moderation.reviewedBy = req.user._id;
+  product.moderation.reviewedAt = new Date();
+
+  await product.save();
+  return sendSuccess(res, { product }, `Product successfully ${action}d`);
+});
+
 module.exports = {
   createProduct,
   listProducts,
   getProductById,
   updateProduct,
   deleteProduct,
-  downloadProduct
+  downloadProduct,
+  getPendingProductsForAdmin,
+  moderateProduct
 };

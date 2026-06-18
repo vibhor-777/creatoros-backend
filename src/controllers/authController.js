@@ -3,6 +3,7 @@ const User = require('../models/User');
 const Wallet = require('../models/Wallet');
 const { isValidEmail, isEduEmail, normalizeEmail } = require('../utils/emailValidator');
 const { sendSuccess, sendError, asyncHandler } = require('../utils/responseHelper');
+const emailService = require('../services/emailService');
 
 const signAccessToken = (userId) => {
   return jwt.sign({ sub: userId }, process.env.JWT_SECRET, {
@@ -44,11 +45,15 @@ const register = asyncHandler(async (req, res) => {
   // Set verification status based on method
   let verificationStatus = 'unverified';
   let eduVerified = false;
+  let otpCode = null;
+  let otpExpires = null;
 
   if (isEdu) {
-    // .EDU email — instant verification
-    verificationStatus = 'verified';
-    eduVerified = true;
+    // .EDU email — needs OTP validation for instant verification
+    verificationStatus = 'pending_otp';
+    eduVerified = false;
+    otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+    otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
   } else if (verificationMethod === 'digilocker') {
     // DigiLocker — government verified, instant
     verificationStatus = 'verified';
@@ -78,15 +83,48 @@ const register = asyncHandler(async (req, res) => {
     verificationStatus,
     verificationMethod,
     idCardUrl: req.body.idCardUrl || null,
-    role: 'creator'
+    role: 'creator',
+    otpCode,
+    otpExpires
   });
 
   const wallet = await Wallet.create({ user: user._id });
   user.wallet = wallet._id;
   await user.save();
 
+  if (verificationStatus === 'pending_otp') {
+    // Send email with OTP code using emailService
+    await emailService.sendVerificationOtp(user.email, user.fullName, otpCode);
+
+    return sendSuccess(
+      res,
+      {
+        requiresOtp: true,
+        email: user.email,
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          eduVerified: user.eduVerified,
+          verificationStatus: user.verificationStatus
+        }
+      },
+      'Verification OTP sent to your college email',
+      201
+    );
+  }
+
   const accessToken = signAccessToken(user._id.toString());
   const refreshToken = signRefreshToken(user._id.toString());
+
+  // Send welcome email or admin notifications immediately
+  if (verificationStatus === 'verified') {
+    await emailService.sendWelcomeEmail(user);
+  } else if (verificationStatus === 'pending') {
+    await emailService.notifyAdminNewVerification(user);
+  }
 
   return sendSuccess(
     res,
@@ -222,10 +260,70 @@ const adminSetup = asyncHandler(async (req, res) => {
   }, match ? 'Admin password reset successfully — login will work now' : 'Reset failed — contact developer');
 });
 
+const verifyOtp = asyncHandler(async (req, res) => {
+  const { email, otp } = req.body;
+  if (!email || !otp) {
+    return sendError(res, 'Email and OTP code are required', 400);
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  const user = await User.findOne({ email: normalizedEmail });
+
+  if (!user) {
+    return sendError(res, 'User not found', 404);
+  }
+
+  if (user.verificationStatus !== 'pending_otp') {
+    return sendError(res, 'Account is not pending OTP verification', 400);
+  }
+
+  if (user.otpCode !== otp) {
+    return sendError(res, 'Invalid OTP verification code', 400);
+  }
+
+  if (user.otpExpires < new Date()) {
+    return sendError(res, 'OTP verification code has expired', 400);
+  }
+
+  // OTP is valid! Activate user
+  user.verificationStatus = 'verified';
+  user.eduVerified = true;
+  user.otpCode = null;
+  user.otpExpires = null;
+  await user.save();
+
+  // Generate session tokens
+  const accessToken = signAccessToken(user._id.toString());
+  const refreshToken = signRefreshToken(user._id.toString());
+
+  // Send welcome email
+  await emailService.sendWelcomeEmail(user);
+
+  return sendSuccess(
+    res,
+    {
+      user: {
+        id: user._id,
+        fullName: user.fullName,
+        username: user.username,
+        email: user.email,
+        role: user.role,
+        wallet: user.wallet,
+        eduVerified: user.eduVerified,
+        verificationStatus: user.verificationStatus
+      },
+      accessToken,
+      refreshToken
+    },
+    'Email verified and account activated successfully'
+  );
+});
+
 module.exports = {
   register,
   login,
   refreshToken,
   getMe,
-  adminSetup
+  adminSetup,
+  verifyOtp
 };

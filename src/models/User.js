@@ -85,6 +85,14 @@ const userSchema = new mongoose.Schema(
       trim: true,
       default: null
     },
+    otpCode: {
+      type: String,
+      default: null
+    },
+    otpExpires: {
+      type: Date,
+      default: null
+    },
     // --- END NEW fields ---
     avatarUrl: {
       type: String,

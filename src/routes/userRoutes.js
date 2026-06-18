@@ -8,9 +8,15 @@ router.get('/creators', userController.listCreators);
 router.get('/me', auth, userController.getProfile);
 router.patch('/me', auth, userController.updateProfile);
 
-// Admin verification routes
+// Admin verification & management routes
 router.get('/pending-verifications', auth, authorize('admin'), userController.getPendingVerifications);
 router.post('/:userId/verify', auth, authorize('admin'), userController.verifyUser);
+router.get('/admin/all', auth, authorize('admin'), userController.listAllUsersForAdmin);
+
+// User reporting routes
+router.post('/:userId/report', auth, userController.reportUser);
+router.get('/admin/reports', auth, authorize('admin'), userController.listReportsForAdmin);
+router.post('/admin/reports/:reportId/action', auth, authorize('admin'), userController.moderateReport);
 
 module.exports = router;
 
