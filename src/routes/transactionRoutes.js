@@ -7,6 +7,6 @@ const router = express.Router();
 router.post('/order', auth, transactionController.createPaymentOrder);
 router.post('/verify', auth, transactionController.verifyPayment);
 router.get('/my', auth, transactionController.getMyTransactions);
-router.post('/:transactionId/release', auth, transactionController.releaseTransaction);
+router.get('/all', auth, transactionController.getAllTransactions); // admin only
 
 module.exports = router;
