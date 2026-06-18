@@ -50,8 +50,51 @@ const seedAdminUser = async () => {
       );
       console.log("[SEED] Admin credentials synced (password re-hashed).");
     }
+
+    // Seed Student User
+    const studentEmail = 'student@studio-z.in';
+    const STUDENT_PASS = 'student@12345';
+    const existingStudent = await User.findOne({ email: studentEmail });
+    if (!existingStudent) {
+      console.log("[SEED] Seeding Student user account...");
+      const studentUser = new User({
+        fullName: 'StudioZ Demo Student',
+        username: 'demostudent',
+        email: studentEmail,
+        password: STUDENT_PASS,
+        role: 'student',
+        eduVerified: true,
+        verificationStatus: 'verified',
+        verificationMethod: 'email'
+      });
+
+      const wallet = await Wallet.create({ user: studentUser._id });
+      studentUser.wallet = wallet._id;
+      await studentUser.save();
+      console.log("[SEED] Student user created successfully.");
+    } else {
+      // Sync student password & role
+      existingStudent.role = 'student';
+      existingStudent.eduVerified = true;
+      existingStudent.verificationStatus = 'verified';
+      existingStudent.password = await bcrypt.hash(STUDENT_PASS, 12);
+      existingStudent.markModified('password');
+
+      await User.updateOne(
+        { _id: existingStudent._id },
+        {
+          $set: {
+            role: 'student',
+            eduVerified: true,
+            verificationStatus: 'verified',
+            password: existingStudent.password
+          }
+        }
+      );
+      console.log("[SEED] Student credentials synced.");
+    }
   } catch (err) {
-    console.error("[SEED] Failed to seed Admin user:", err.message);
+    console.error("[SEED] Failed to seed Admin/Student users:", err.message);
   }
 };
 
