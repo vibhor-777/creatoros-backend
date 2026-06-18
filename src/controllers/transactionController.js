@@ -62,7 +62,8 @@ const verifyPayment = asyncHandler(async (req, res) => {
     return sendError(res, 'Payment signature verification failed', 400);
   }
 
-  transaction.status = 'paid';
+  transaction.status = 'on_hold';
+  transaction.holdReleaseAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
   transaction.gatewayPaymentId = paymentId;
   transaction.purchasedAt = new Date();
   await transaction.save();
@@ -86,6 +87,40 @@ const getMyTransactions = asyncHandler(async (req, res) => {
     .limit(200);
 
   return sendSuccess(res, { transactions }, 'Transactions fetched');
+});
+
+const releaseTransaction = asyncHandler(async (req, res) => {
+  const { transactionId } = req.params;
+  const transaction = await Transaction.findById(transactionId);
+  if (!transaction) {
+    return sendError(res, 'Transaction not found', 404);
+  }
+  if (transaction.status !== 'on_hold') {
+    return sendError(res, `Transaction status is '${transaction.status}', expected 'on_hold'`, 400);
+  }
+  transaction.status = 'released';
+  await transaction.save();
+  const Wallet = require('../models/Wallet');
+  const User = require('../models/User');
+  let wallet = await Wallet.findOne({ user: transaction.seller });
+  if (!wallet) {
+    wallet = await Wallet.create({ user: transaction.seller });
+    await User.findByIdAndUpdate(transaction.seller, { wallet: wallet._id });
+  }
+  const payoutAmount = transaction.amount - (transaction.platformFee || 0);
+  wallet.availableBalance += payoutAmount;
+  wallet.addEntry({
+    type: 'credit',
+    source: 'payout',
+    amount: payoutAmount,
+    referenceTransaction: transaction._id,
+    note: `Payout for transaction ${transaction._id}`
+  });
+  await wallet.save();
+  await User.findByIdAndUpdate(transaction.seller, {
+    $inc: { lifetimeEarnings: payoutAmount }
+  });
+  return sendSuccess(res, { transaction }, 'Transaction funds released successfully');
 });
 
 module.exports = {
