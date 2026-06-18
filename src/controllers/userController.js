@@ -28,7 +28,11 @@ const updateProfile = asyncHandler(async (req, res) => {
 });
 
 const listCreators = asyncHandler(async (req, res) => {
-  const creators = await User.find({ role: { $in: ['creator', 'student'] }, isActive: true })
+  const creators = await User.find({ 
+    role: { $in: ['creator', 'student'] }, 
+    isActive: true, 
+    verificationStatus: 'verified' 
+  })
     .select('fullName username bio avatarUrl stats')
     .sort({ 'stats.rating': -1, createdAt: -1 })
     .limit(100);
