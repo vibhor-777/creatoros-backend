@@ -8,8 +8,8 @@ const { auth } = require('../middleware/auth');
 const upload = require('../middleware/upload'); 
 
 // --- ROUTE DEFINITIONS ---
-// The pipeline strictly executes: 1. Auth Check -> 2. File Parse -> 3. Response Callback
-router.post('/file', auth, upload.single('document'), (req, res) => {
+// The pipeline strictly executes: 1. File Parse -> 2. Response Callback
+router.post('/file', upload.single('document'), (req, res) => {
     
     // Safety Trap: Prevent crashes if the payload is empty
     if (!req.file) {
