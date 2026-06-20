@@ -202,7 +202,7 @@ const getPendingProductsForAdmin = asyncHandler(async (req, res) => {
   return sendSuccess(res, { products }, 'Pending products fetched');
 });
 
-const moderateProduct = asyncHandler(async (req, res) => {
+const moderateProductStatus = asyncHandler(async (req, res) => {
   const { productId } = req.params;
   const { action, reason } = req.body; // 'approve' or 'reject'
 
@@ -230,7 +230,13 @@ const moderateProduct = asyncHandler(async (req, res) => {
   return sendSuccess(res, { product }, `Product successfully ${action}d`);
 });
 
-module.exports = {
+
+const clearAllProducts = asyncHandler(async (req, res) => {
+  await Product.deleteMany({});
+  return sendSuccess(res, null, 'All products deleted');
+});
+\nmodule.exports = {
+  clearAllProducts,
   createProduct,
   listProducts,
   getProductById,
@@ -238,5 +244,5 @@ module.exports = {
   deleteProduct,
   downloadProduct,
   getPendingProductsForAdmin,
-  moderateProduct
+  moderateProduct: moderateProductStatus
 };

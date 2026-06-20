@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.get('/', optionalAuth, productController.listProducts);
 router.get('/admin/pending', auth, authorize('admin'), productController.getPendingProductsForAdmin);
-router.post('/:productId/moderate', auth, authorize('admin'), productController.moderateProduct);
+router.post('/:productId/moderate', auth, authorize('admin'), productController.moderateProductStatus);
 
 router.get('/:productId', productController.getProductById);
 router.get('/:productId/download', auth, productController.downloadProduct);
@@ -15,4 +15,6 @@ router.post('/', auth, upload.single('file'), productController.createProduct);
 router.patch('/:productId', auth, productController.updateProduct);
 router.delete('/:productId', auth, productController.deleteProduct);
 
-module.exports = router;
+
+router.delete('/admin/clear-all', auth, authorize('admin'), productController.clearAllProducts);
+\nmodule.exports = router;

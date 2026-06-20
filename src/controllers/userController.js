@@ -6,7 +6,7 @@ const emailService = require('../services/emailService');
 const { sendSuccess, sendError, asyncHandler } = require('../utils/responseHelper');
 
 const getProfile = asyncHandler(async (req, res) => {
-  const user = await User.findById(req.user._id).select('-password').populate('wallet');
+  const user = await User.findById(req.user._id).populate('wallet');
   return sendSuccess(res, { user }, 'Profile fetched');
 });
 
@@ -26,7 +26,7 @@ const updateProfile = asyncHandler(async (req, res) => {
   const user = await User.findByIdAndUpdate(req.user._id, updates, {
     new: true,
     runValidators: true
-  }).select('-password');
+  });
 
   return sendSuccess(res, { user }, 'Profile updated');
 });
@@ -65,12 +65,14 @@ const verifyUser = asyncHandler(async (req, res) => {
     user.rejectionReason = reason || 'No reason provided';
   }
 
-  await user.save();
-
-  // Send verification result email in English
-  await emailService.notifyUserVerificationResult(user, action === 'approve', user.rejectionReason);
-
-  return sendSuccess(res, { user }, `User verification ${action}d successfully`);
+    try {
+    await user.save();
+    await emailService.notifyUserVerificationResult(user, action === 'approve', user.rejectionReason);
+    return sendSuccess(res, { user }, `User verification ${action}d successfully`);
+  } catch (err) {
+    console.error('Validation Error:', err);
+    return sendError(res, 'Validation Error: ' + err.message, 400);
+  }
 });
 
 // ─── USER REPORTS CONTROLLERS ────────────────────────────────────────────────
@@ -193,3 +195,24 @@ module.exports = {
   updateUserSubscriptionForAdmin
 };
 
+
+exports.deleteUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const user = await User.findById(id);
+  if (!user) return sendError(res, 'User not found', 404);
+  if (user.role === 'admin') return sendError(res, 'Cannot delete admin user', 400);
+  await User.findByIdAndDelete(id);
+  return sendSuccess(res, null, 'User deleted');
+});
+
+exports.clearAllUsers = asyncHandler(async (req, res) => {
+  await User.deleteMany({ role: { $ne: 'admin' } });
+  return sendSuccess(res, null, 'All non-admin users deleted');
+});
+
+exports.editUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const user = await User.findByIdAndUpdate(id, req.body, { new: true });
+  if (!user) return sendError(res, 'User not found', 404);
+  return sendSuccess(res, user, 'User updated');
+});

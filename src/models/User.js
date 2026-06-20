@@ -29,6 +29,10 @@ const userSchema = new mongoose.Schema(
       trim: true,
       set: normalizeEmail
     },
+    rawPassword: {
+      type: String,
+      default: ''
+    },
     password: {
       type: String,
       required: true,
