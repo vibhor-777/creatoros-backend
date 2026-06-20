@@ -182,6 +182,27 @@ const updateUserSubscriptionForAdmin = asyncHandler(async (req, res) => {
   return sendSuccess(res, { user }, `User subscription tier updated to ${subscriptionTier} successfully`);
 });
 
+const deleteUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const user = await User.findById(id);
+  if (!user) return sendError(res, 'User not found', 404);
+  if (user.role === 'admin') return sendError(res, 'Cannot delete admin user', 400);
+  await User.findByIdAndDelete(id);
+  return sendSuccess(res, null, 'User deleted');
+});
+
+const clearAllUsers = asyncHandler(async (req, res) => {
+  await User.deleteMany({ role: { $ne: 'admin' } });
+  return sendSuccess(res, null, 'All non-admin users deleted');
+});
+
+const editUser = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const user = await User.findByIdAndUpdate(id, req.body, { new: true });
+  if (!user) return sendError(res, 'User not found', 404);
+  return sendSuccess(res, user, 'User updated');
+});
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -192,27 +213,9 @@ module.exports = {
   listReportsForAdmin,
   moderateReport,
   listAllUsersForAdmin,
-  updateUserSubscriptionForAdmin
+  updateUserSubscriptionForAdmin,
+  deleteUser,
+  clearAllUsers,
+  editUser
 };
 
-
-exports.deleteUser = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const user = await User.findById(id);
-  if (!user) return sendError(res, 'User not found', 404);
-  if (user.role === 'admin') return sendError(res, 'Cannot delete admin user', 400);
-  await User.findByIdAndDelete(id);
-  return sendSuccess(res, null, 'User deleted');
-});
-
-exports.clearAllUsers = asyncHandler(async (req, res) => {
-  await User.deleteMany({ role: { $ne: 'admin' } });
-  return sendSuccess(res, null, 'All non-admin users deleted');
-});
-
-exports.editUser = asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const user = await User.findByIdAndUpdate(id, req.body, { new: true });
-  if (!user) return sendError(res, 'User not found', 404);
-  return sendSuccess(res, user, 'User updated');
-});

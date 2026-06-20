@@ -235,7 +235,7 @@ const clearAllProducts = asyncHandler(async (req, res) => {
   await Product.deleteMany({});
   return sendSuccess(res, null, 'All products deleted');
 });
-\nmodule.exports = {
+module.exports = {
   clearAllProducts,
   createProduct,
   listProducts,

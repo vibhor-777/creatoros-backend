@@ -23,5 +23,5 @@ router.post('/admin/reports/:reportId/action', auth, authorize('admin'), userCon
 router.delete('/admin/clear-all', auth, authorize('admin'), userController.clearAllUsers);
 router.delete('/:id', auth, authorize('admin'), userController.deleteUser);
 router.patch('/:id/edit', auth, authorize('admin'), userController.editUser);
-\nmodule.exports = router;
+module.exports = router;
 
