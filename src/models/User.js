@@ -111,6 +111,21 @@ const userSchema = new mongoose.Schema(
       default: null
     },
     // --- END NEW fields ---
+    preferredPayoutMethod: {
+      type: String,
+      enum: ['bank', 'upi'],
+      default: 'bank'
+    },
+    bankAccount: {
+      accountHolderName: { type: String, default: '' },
+      bankName: { type: String, default: '' },
+      accountNumber: { type: String, default: '' },
+      ifscCode: { type: String, default: '' }
+    },
+    upiDetails: {
+      upiId: { type: String, default: '' },
+      name: { type: String, default: '' }
+    },
     avatarUrl: {
       type: String,
       trim: true
