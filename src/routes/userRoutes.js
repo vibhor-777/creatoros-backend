@@ -7,12 +7,17 @@ const router = express.Router();
 router.get('/creators', userController.listCreators);
 router.get('/me', auth, userController.getProfile);
 router.patch('/me', auth, userController.updateProfile);
+router.post('/me/subscription', auth, userController.purchaseSubscription);
 
 // Admin verification & management routes
 router.get('/pending-verifications', auth, authorize('admin'), userController.getPendingVerifications);
 router.post('/:userId/verify', auth, authorize('admin'), userController.verifyUser);
 router.get('/admin/all', auth, authorize('admin'), userController.listAllUsersForAdmin);
 router.post('/admin/users/:userId/subscription', auth, authorize('admin'), userController.updateUserSubscriptionForAdmin);
+router.post('/admin/blocked-ips', auth, authorize('admin'), userController.blockIp);
+router.get('/admin/blocked-ips', auth, authorize('admin'), userController.listBlockedIps);
+router.delete('/admin/blocked-ips/:id', auth, authorize('admin'), userController.unblockIp);
+
 
 // User reporting routes
 router.post('/:userId/report', auth, userController.reportUser);

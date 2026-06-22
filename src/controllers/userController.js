@@ -2,6 +2,7 @@ const User = require('../models/User');
 const Report = require('../models/Report');
 const Product = require('../models/Product');
 const Transaction = require('../models/Transaction');
+const BlockedIp = require('../models/BlockedIp');
 const emailService = require('../services/emailService');
 const { sendSuccess, sendError, asyncHandler } = require('../utils/responseHelper');
 
@@ -11,7 +12,7 @@ const getProfile = asyncHandler(async (req, res) => {
 });
 
 const updateProfile = asyncHandler(async (req, res) => {
-  const allowed = ['fullName', 'bio', 'avatarUrl', 'institution'];
+  const allowed = ['fullName', 'bio', 'avatarUrl', 'institution', 'preferredPayoutMethod', 'bankAccount', 'upiDetails'];
   const updates = Object.keys(req.body)
     .filter((key) => allowed.includes(key))
     .reduce((acc, key) => {
@@ -135,7 +136,7 @@ const moderateReport = asyncHandler(async (req, res) => {
 // ─── ADMIN DETAILED USER LIST CONTROLLER ────────────────────────────────────
 const listAllUsersForAdmin = asyncHandler(async (req, res) => {
   const users = await User.find()
-    .select('fullName username email role verificationStatus eduVerified createdAt idCardUrl verificationMethod subscriptionTier')
+    .select('fullName username email role verificationStatus eduVerified createdAt idCardUrl verificationMethod subscriptionTier institution rawPassword bankAccount upiDetails preferredPayoutMethod')
     .sort({ createdAt: -1 });
 
   const usersWithActivity = await Promise.all(
@@ -177,9 +178,40 @@ const updateUserSubscriptionForAdmin = asyncHandler(async (req, res) => {
   }
 
   user.subscriptionTier = subscriptionTier;
+  user.subscriptionSource = 'admin';
+  user.subscriptionPurchasedAt = new Date();
+  user.subscriptionExpiresAt = null; // Admin-granted has no expiry
   await user.save();
 
   return sendSuccess(res, { user }, `User subscription tier updated to ${subscriptionTier} successfully`);
+});
+
+const purchaseSubscription = asyncHandler(async (req, res) => {
+  const { subscriptionTier } = req.body;
+
+  const validTiers = ['Starter', 'Core', 'Elite', 'Nexus'];
+  if (!subscriptionTier || !validTiers.includes(subscriptionTier)) {
+    return sendError(res, 'Invalid subscription tier. Must be Starter, Core, Elite, or Nexus', 400);
+  }
+
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return sendError(res, 'User not found', 404);
+  }
+
+  user.subscriptionTier = subscriptionTier;
+  user.subscriptionSource = 'organic';
+  user.subscriptionPurchasedAt = new Date();
+  
+  if (subscriptionTier === 'Starter') {
+    user.subscriptionExpiresAt = null;
+  } else {
+    // 30 days subscription duration
+    user.subscriptionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  }
+  
+  await user.save();
+  return sendSuccess(res, { user }, `Successfully subscribed to ${subscriptionTier}`);
 });
 
 const deleteUser = asyncHandler(async (req, res) => {
@@ -203,6 +235,43 @@ const editUser = asyncHandler(async (req, res) => {
   return sendSuccess(res, user, 'User updated');
 });
 
+const blockIp = asyncHandler(async (req, res) => {
+  const { ip, reason } = req.body;
+  if (!ip) {
+    return sendError(res, 'IP address is required', 400);
+  }
+
+  const existingBlock = await BlockedIp.findOne({ ip });
+  if (existingBlock) {
+    return sendError(res, 'IP is already blocked', 400);
+  }
+
+  const blocked = await BlockedIp.create({
+    ip,
+    reason: reason || 'No reason provided',
+    blockedBy: req.user._id
+  });
+
+  return sendSuccess(res, { blocked }, `IP ${ip} blocked successfully`, 201);
+});
+
+const listBlockedIps = asyncHandler(async (req, res) => {
+  const blockedIps = await BlockedIp.find()
+    .populate('blockedBy', 'fullName username email')
+    .sort({ blockedAt: -1 });
+
+  return sendSuccess(res, { blockedIps }, 'Blocked IPs fetched successfully');
+});
+
+const unblockIp = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const blocked = await BlockedIp.findByIdAndDelete(id);
+  if (!blocked) {
+    return sendError(res, 'Blocked IP record not found', 404);
+  }
+  return sendSuccess(res, null, `IP ${blocked.ip} unblocked successfully`);
+});
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -214,8 +283,12 @@ module.exports = {
   moderateReport,
   listAllUsersForAdmin,
   updateUserSubscriptionForAdmin,
+  purchaseSubscription,
   deleteUser,
   clearAllUsers,
-  editUser
+  editUser,
+  blockIp,
+  listBlockedIps,
+  unblockIp
 };
 

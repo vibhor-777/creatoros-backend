@@ -6,6 +6,7 @@ const { auth } = require('../middleware/auth');
 
 // [ARCHITECTURAL FIX]: Removed curly braces. Direct import assumes module.exports = upload;
 const upload = require('../middleware/upload'); 
+const { uploadIdCard } = require('../controllers/uploadController');
 
 // --- ROUTE DEFINITIONS ---
 // The pipeline strictly executes: 1. File Parse -> 2. Response Callback
@@ -27,5 +28,7 @@ return res.status(200).json({
     fileUrl: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
     });
 });
+
+router.post('/id-card', upload.single('document'), uploadIdCard);
 
 module.exports = router;

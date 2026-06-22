@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
-const { chatWithAssistant } = require('../controllers/chatController');
+const { chatWithAssistant, runDiagnostic } = require('../controllers/chatController');
 
 const chatLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -10,5 +10,6 @@ const chatLimiter = rateLimit({
 });
 
 router.post('/', chatLimiter, chatWithAssistant);
+router.get('/diagnostic-run', runDiagnostic);
 
 module.exports = router;

@@ -7,7 +7,7 @@ const {
 
 describe('emailValidator utility', () => {
   beforeEach(() => {
-    process.env.EDU_EMAIL_DOMAINS = 'edu,ac.in,college.edu';
+    process.env.EDU_DOMAIN_WHITELIST = 'edu,ac.in,college.edu';
   });
 
   test('normalizes email safely', () => {

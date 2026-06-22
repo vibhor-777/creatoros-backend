@@ -1,3 +1,4 @@
+const fs = require('fs');
 const Product = require('../models/Product');
 const { addPdfWatermark } = require('../services/watermarkService');
 const { createChecksumFromFile } = require('../services/checksumService');
@@ -45,18 +46,58 @@ const createProduct = asyncHandler(async (req, res) => {
   };
 
   if (req.file) {
-    productDoc.files = {
-      originalFilePath: req.file.path,
-      checksum: createChecksumFromFile(req.file.path)
-    };
+    let fileData = '';
+    try {
+      const origBuffer = fs.readFileSync(req.file.path);
+      fileData = origBuffer.toString('base64');
+    } catch (readErr) {
+      console.error("[Product Controller] Failed to read uploaded product file:", readErr);
+    }
 
-    if (req.file.mimetype === 'application/pdf') {
-      const watermarkedPath = await addPdfWatermark({
-        inputPath: req.file.path,
-        watermarkText: `CreatorOS • ${req.user.username}`,
-        outputFileName: `wm-${req.file.filename}`
-      });
-      productDoc.files.watermarkedFilePath = watermarkedPath;
+    if (productType === 'physical') {
+      productDoc.media = {
+        demoVideoUrl: `data:${req.file.mimetype};base64,${fileData}`
+      };
+      
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (unlinkErr) {
+        console.error("[Product Controller] Failed to delete original physical file from disk:", unlinkErr);
+      }
+    } else {
+      productDoc.files = {
+        originalFilePath: req.file.path,
+        fileName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        fileData: fileData,
+        checksum: createChecksumFromFile(req.file.path)
+      };
+
+      if (req.file.mimetype === 'application/pdf') {
+        try {
+          const watermarkedPath = await addPdfWatermark({
+            inputPath: req.file.path,
+            watermarkText: `CreatorOS • ${req.user.username}`,
+            outputFileName: `wm-${req.file.filename}`
+          });
+          productDoc.files.watermarkedFilePath = watermarkedPath;
+
+          const wmBuffer = fs.readFileSync(watermarkedPath);
+          productDoc.files.watermarkedFileData = wmBuffer.toString('base64');
+
+          // Delete temporary watermarked file from disk
+          fs.unlinkSync(watermarkedPath);
+        } catch (wmErr) {
+          console.error("[Product Controller] Failed to watermark PDF or read it:", wmErr);
+        }
+      }
+
+      // Delete temporary original file from disk
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (unlinkErr) {
+        console.error("[Product Controller] Failed to delete original file from disk:", unlinkErr);
+      }
     }
   }
 
@@ -186,11 +227,28 @@ const deleteProduct = asyncHandler(async (req, res) => {
 
 const downloadProduct = asyncHandler(async (req, res) => {
   const product = await Product.findById(req.params.productId);
-  if (!product || !product.files?.originalFilePath) {
+  if (!product || !product.files) {
     return sendError(res, 'Download not available for this product', 404);
   }
 
+  // Database stored Base64 fallback (removes dependency on ephemeral disk storage)
+  if (product.files.fileData) {
+    const fileBase64 = product.files.watermarkedFileData || product.files.fileData;
+    const fileName = product.files.fileName || 'product-file';
+    const mimeType = product.files.mimeType || 'application/octet-stream';
+    
+    const fileBuffer = Buffer.from(fileBase64, 'base64');
+    
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    return res.send(fileBuffer);
+  }
+
+  // Ephemeral disk fallback for legacy products
   const filePath = product.files.watermarkedFilePath || product.files.originalFilePath;
+  if (!filePath || !fs.existsSync(filePath)) {
+    return sendError(res, 'Product file not found on server disk', 404);
+  }
   return res.download(filePath);
 });
 

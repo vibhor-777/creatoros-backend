@@ -51,6 +51,7 @@ const addFunds = asyncHandler(async (req, res) => {
 
 const withdrawFunds = asyncHandler(async (req, res) => {
   const amount = Number(req.body.amount);
+  const payoutMethod = req.body.payoutMethod || 'bank'; // 'bank' or 'upi'
   if (!Number.isFinite(amount) || amount <= 0) {
     return sendError(res, 'Valid amount is required', 400);
   }
@@ -65,8 +66,11 @@ const withdrawFunds = asyncHandler(async (req, res) => {
     type: 'debit',
     source: 'payout',
     amount,
-    note: 'Wallet withdrawal'
+    note: `Wallet withdrawal via ${payoutMethod}`
   });
+
+  const user = await User.findById(req.user._id);
+  const details = payoutMethod === 'bank' ? user.bankAccount : user.upiDetails;
 
   const transaction = await Transaction.create({
     buyer: req.user._id,
@@ -74,7 +78,14 @@ const withdrawFunds = asyncHandler(async (req, res) => {
     transactionType: 'wallet_withdrawal',
     paymentGateway: 'wallet',
     amount,
-    status: 'paid',
+    status: 'pending',
+    metadata: {
+      payoutMethod,
+      details,
+      username: user.username,
+      email: user.email,
+      fullName: user.fullName
+    },
     purchasedAt: new Date()
   });
 
@@ -82,6 +93,73 @@ const withdrawFunds = asyncHandler(async (req, res) => {
   await wallet.save();
 
   return sendSuccess(res, { wallet, transaction }, 'Withdrawal initiated');
+});
+
+const getWithdrawalsForAdmin = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return sendError(res, 'Unauthorized admin access required', 403);
+  }
+
+  const withdrawals = await Transaction.find({
+    transactionType: 'wallet_withdrawal'
+  })
+    .populate('buyer', 'fullName email username')
+    .sort({ createdAt: -1 });
+
+  return sendSuccess(res, { withdrawals }, 'Withdrawals fetched successfully');
+});
+
+const completeWithdrawalForAdmin = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return sendError(res, 'Unauthorized admin access required', 403);
+  }
+
+  const { id } = req.params;
+  const transaction = await Transaction.findById(id);
+  if (!transaction || transaction.transactionType !== 'wallet_withdrawal') {
+    return sendError(res, 'Withdrawal transaction not found', 404);
+  }
+
+  if (transaction.status !== 'pending') {
+    return sendError(res, `Transaction is already in ${transaction.status} status`, 400);
+  }
+
+  transaction.status = 'paid';
+  await transaction.save();
+
+  return sendSuccess(res, { transaction }, 'Withdrawal marked as completed');
+});
+
+const cancelWithdrawalForAdmin = asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    return sendError(res, 'Unauthorized admin access required', 403);
+  }
+
+  const { id } = req.params;
+  const transaction = await Transaction.findById(id);
+  if (!transaction || transaction.transactionType !== 'wallet_withdrawal') {
+    return sendError(res, 'Withdrawal transaction not found', 404);
+  }
+
+  if (transaction.status !== 'pending') {
+    return sendError(res, `Transaction is already in ${transaction.status} status`, 400);
+  }
+
+  transaction.status = 'cancelled';
+  await transaction.save();
+
+  const wallet = await ensureWallet(transaction.buyer);
+  wallet.availableBalance += transaction.amount;
+  wallet.addEntry({
+    type: 'credit',
+    source: 'refund',
+    amount: transaction.amount,
+    referenceTransaction: transaction._id,
+    note: 'Withdrawal request cancelled and refunded'
+  });
+  await wallet.save();
+
+  return sendSuccess(res, { transaction, wallet }, 'Withdrawal cancelled and refunded successfully');
 });
 
 const transferFunds = asyncHandler(async (req, res) => {
@@ -159,5 +237,8 @@ module.exports = {
   getWallet,
   addFunds,
   withdrawFunds,
-  transferFunds
+  transferFunds,
+  getWithdrawalsForAdmin,
+  completeWithdrawalForAdmin,
+  cancelWithdrawalForAdmin
 };

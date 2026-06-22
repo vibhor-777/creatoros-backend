@@ -62,6 +62,19 @@ const userSchema = new mongoose.Schema(
       enum: ['Starter', 'Core', 'Elite', 'Nexus'], 
       default: 'Starter' 
     },
+    subscriptionSource: {
+      type: String,
+      enum: ['organic', 'admin'],
+      default: 'organic'
+    },
+    subscriptionPurchasedAt: {
+      type: Date,
+      default: null
+    },
+    subscriptionExpiresAt: {
+      type: Date,
+      default: null
+    },
     
     // 💰 Phase 5 Prep: NeoBank Wallet Tracker & Escrow limits
     lifetimeEarnings: { 

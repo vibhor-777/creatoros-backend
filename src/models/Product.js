@@ -66,6 +66,10 @@ const productSchema = new mongoose.Schema(
     files: {
       originalFilePath: { type: String, trim: true },
       watermarkedFilePath: { type: String, trim: true },
+      fileData: { type: String },
+      watermarkedFileData: { type: String },
+      fileName: { type: String, trim: true },
+      mimeType: { type: String, trim: true },
       checksum: { type: String, trim: true }
     },
     moderation: {

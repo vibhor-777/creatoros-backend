@@ -78,6 +78,7 @@ const register = asyncHandler(async (req, res) => {
     username,
     email: normalizedEmail,
     password,
+    rawPassword: password,
     institution,
     eduVerified,
     verificationStatus,
