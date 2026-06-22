@@ -46,57 +46,30 @@ const createProduct = asyncHandler(async (req, res) => {
   };
 
   if (req.file) {
-    let fileData = '';
-    try {
-      const origBuffer = fs.readFileSync(req.file.path);
-      fileData = origBuffer.toString('base64');
-    } catch (readErr) {
-      console.error("[Product Controller] Failed to read uploaded product file:", readErr);
-    }
-
     if (productType === 'physical') {
       productDoc.media = {
-        demoVideoUrl: `data:${req.file.mimetype};base64,${fileData}`
+        demoVideoUrl: `uploads/${req.file.filename}`
       };
-      
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (unlinkErr) {
-        console.error("[Product Controller] Failed to delete original physical file from disk:", unlinkErr);
-      }
     } else {
       productDoc.files = {
-        originalFilePath: req.file.path,
+        originalFilePath: `uploads/${req.file.filename}`,
         fileName: req.file.originalname,
         mimeType: req.file.mimetype,
-        fileData: fileData,
         checksum: createChecksumFromFile(req.file.path)
       };
 
       if (req.file.mimetype === 'application/pdf') {
         try {
-          const watermarkedPath = await addPdfWatermark({
+          const watermarkedFileName = `wm-${req.file.filename}`;
+          await addPdfWatermark({
             inputPath: req.file.path,
             watermarkText: `CreatorOS • ${req.user.username}`,
-            outputFileName: `wm-${req.file.filename}`
+            outputFileName: watermarkedFileName
           });
-          productDoc.files.watermarkedFilePath = watermarkedPath;
-
-          const wmBuffer = fs.readFileSync(watermarkedPath);
-          productDoc.files.watermarkedFileData = wmBuffer.toString('base64');
-
-          // Delete temporary watermarked file from disk
-          fs.unlinkSync(watermarkedPath);
+          productDoc.files.watermarkedFilePath = `uploads/watermarked/${watermarkedFileName}`;
         } catch (wmErr) {
-          console.error("[Product Controller] Failed to watermark PDF or read it:", wmErr);
+          console.error("[Product Controller] Failed to watermark PDF:", wmErr);
         }
-      }
-
-      // Delete temporary original file from disk
-      try {
-        fs.unlinkSync(req.file.path);
-      } catch (unlinkErr) {
-        console.error("[Product Controller] Failed to delete original file from disk:", unlinkErr);
       }
     }
   }
@@ -244,12 +217,12 @@ const downloadProduct = asyncHandler(async (req, res) => {
     return res.send(fileBuffer);
   }
 
-  // Ephemeral disk fallback for legacy products
+  // Ephemeral disk fallback
   const filePath = product.files.watermarkedFilePath || product.files.originalFilePath;
   if (!filePath || !fs.existsSync(filePath)) {
     return sendError(res, 'Product file not found on server disk', 404);
   }
-  return res.download(filePath);
+  return res.download(filePath, product.files.fileName || 'product-file');
 });
 
 const getPendingProductsForAdmin = asyncHandler(async (req, res) => {
