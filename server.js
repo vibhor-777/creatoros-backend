@@ -43,11 +43,16 @@ const { checkIpBlock } = require('./src/middleware/ipBlock');
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(checkIpBlock);
-app.use('/uploads', express.static('uploads'));
+app.use('/uploads', (req, res, next) => {
+  // Ensure images and videos are served inline (not as downloads)
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.removeHeader('Content-Disposition');
+  next();
+}, express.static('uploads'));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 100,
+  max: 500,
   message: { error: 'Too many requests from this IP, please try again later.' }
 });
 app.use('/api/', limiter);

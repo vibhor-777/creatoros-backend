@@ -25,7 +25,12 @@ const allowedMimeTypes = new Set([
   'application/octet-stream',
   'image/png',
   'image/jpeg',
-  'image/webp'
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+  'video/webm',
+  'video/avi',
+  'video/mpeg'
 ]);
 
 const fileFilter = (req, file, cb) => {

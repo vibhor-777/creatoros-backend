@@ -205,12 +205,101 @@ async function sendVerificationOtp(email, fullName, otp) {
   await sendMail({ to: email, subject, html, text: `Your StudioZ verification code is: ${otp}` });
 }
 
+// ─── 6. New Product Submission to Admin ──────────────────────────────────────
+async function notifyAdminNewProduct(user, product) {
+  const subject = `[StudioZ] New Product Submission — "${product.title}" by ${user.fullName}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a1411;color:#fff;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#B388FF,#7C4DFF);padding:20px 32px;">
+        <h2 style="margin:0;color:#fff;">📦 New Product Submitted</h2>
+        <p style="margin:4px 0 0;opacity:0.8;font-size:13px;">StudioZ Admin Alert</p>
+      </div>
+      <div style="padding:32px;">
+        <p>A new product has been submitted for review:</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;width:140px;">Title</td><td style="padding:10px;border-bottom:1px solid #1a2e28;font-weight:bold;">${product.title}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">Category</td><td style="padding:10px;border-bottom:1px solid #1a2e28;">${product.category || '—'}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">Type</td><td style="padding:10px;border-bottom:1px solid #1a2e28;">${product.productType || 'digital'}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">Price</td><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#00E676;font-weight:700;">₹${product.pricing?.amount || 0}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">Creator</td><td style="padding:10px;border-bottom:1px solid #1a2e28;">${user.fullName} (@${user.username})</td></tr>
+          <tr><td style="padding:10px;color:#A0AAB2;">Creator Email</td><td style="padding:10px;">${user.email}</td></tr>
+        </table>
+        <a href="https://admin.studio-z.in" style="display:inline-block;background:linear-gradient(135deg,#B388FF,#7C4DFF);color:#fff;padding:12px 24px;border-radius:30px;text-decoration:none;font-weight:bold;margin-top:8px;">Review in Admin Panel →</a>
+      </div>
+      <div style="padding:16px 32px;background:#050e0a;font-size:11px;color:#A0AAB2;">StudioZ | admin@studio-z.in | This is an automated notification.</div>
+    </div>
+  `;
+  await sendMail({ to: ADMIN_EMAIL, subject, html, text: `New product submission: "${product.title}" by ${user.fullName} (₹${product.pricing?.amount || 0})` });
+}
+
+
+async function notifyProductModerationResult(user, product, approved, reason) {
+  if (!user.email) return;
+
+  const subject = approved
+    ? `[StudioZ] 🎉 Your product listing "${product.title}" has been approved!`
+    : `[StudioZ] Product listing "${product.title}" was not approved`;
+
+  const html = approved
+    ? `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a1411;color:#fff;border-radius:12px;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#00E676,#00C853);padding:20px 32px;">
+          <h2 style="margin:0;color:#000;">🎉 Listing Approved!</h2>
+          <p style="margin:4px 0 0;opacity:0.7;font-size:13px;color:#000;">StudioZ Product Review</p>
+        </div>
+        <div style="padding:32px;">
+          <p>Hello <strong>${user.fullName}</strong>,</p>
+          <p>Great news! Your product listing has been reviewed and approved by our team. It is now live on the StudioZ marketplace.</p>
+          <div style="background:#0e1b17;border:1px solid #00E676;padding:16px;border-radius:8px;margin:16px 0;">
+            <strong style="color:#00E676;">📦 ${product.title}</strong>
+            <div style="font-size:12px;color:#A0AAB2;margin-top:4px;">₹${product.pricing?.amount || 0} · ${product.category || 'General'}</div>
+          </div>
+          <p>Students can now discover and purchase your listing from The Vault.</p>
+          <a href="https://studio-z.in/#/dashboard" style="display:inline-block;background:linear-gradient(135deg,#FB3640,#B388FF);color:#fff;padding:12px 24px;border-radius:30px;text-decoration:none;font-weight:bold;margin-top:16px;">View Dashboard →</a>
+        </div>
+        <div style="padding:16px 32px;background:#050e0a;font-size:11px;color:#A0AAB2;">StudioZ | India's Student Economy, Unified</div>
+      </div>
+    `
+    : `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a1411;color:#fff;border-radius:12px;overflow:hidden;">
+        <div style="background:#FB3640;padding:20px 32px;">
+          <h2 style="margin:0;color:#fff;">Listing Not Approved</h2>
+          <p style="margin:4px 0 0;opacity:0.8;font-size:13px;">StudioZ Product Review</p>
+        </div>
+        <div style="padding:32px;">
+          <p>Hello <strong>${user.fullName}</strong>,</p>
+          <p>Thank you for submitting your listing on StudioZ. Unfortunately, your listing <strong>"${product.title}"</strong> was not approved by our moderation team.</p>
+          ${reason ? `<div style="background:#0e1b17;border-left:3px solid #FB3640;padding:12px 16px;border-radius:4px;margin:16px 0;"><strong>Reason:</strong> ${reason}</div>` : ''}
+          <p>You are welcome to update your listing and re-submit. Please ensure your product complies with our community guidelines:</p>
+          <ul style="color:#A0AAB2;line-height:1.8;">
+            <li>Provide clear, accurate product descriptions</li>
+            <li>Do not submit plagiarised or copyrighted content</li>
+            <li>Ensure your product has educational or creative value</li>
+          </ul>
+          <a href="https://studio-z.in/#/dashboard" style="display:inline-block;background:#FB3640;color:#fff;padding:12px 24px;border-radius:30px;text-decoration:none;font-weight:bold;margin-top:8px;">Go to Dashboard →</a>
+        </div>
+        <div style="padding:16px 32px;background:#050e0a;font-size:11px;color:#A0AAB2;">StudioZ | Please contact admin@studio-z.in for questions.</div>
+      </div>
+    `;
+
+  await sendMail({
+    to: user.email,
+    subject,
+    html,
+    text: approved
+      ? `Your listing "${product.title}" has been approved and is now live!`
+      : `Your listing "${product.title}" was not approved. Reason: ${reason || 'See guidelines'}`
+  });
+}
+
 module.exports = {
   notifyAdminNewVerification,
   notifyAdminNewPayment,
+  notifyAdminNewProduct,
   notifyUserVerificationResult,
   sendWelcomeEmail,
   sendVerificationOtp,
+  notifyProductModerationResult,
 };
 
 

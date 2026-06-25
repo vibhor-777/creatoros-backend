@@ -1,10 +1,12 @@
 const fs = require('fs');
 const Product = require('../models/Product');
+const User = require('../models/User');
 const { addPdfWatermark } = require('../services/watermarkService');
 const { createChecksumFromFile } = require('../services/checksumService');
 const { moderateProduct } = require('../services/moderationService');
 const { summarizeProductDescription } = require('../services/openaiService');
 const { sendSuccess, sendError, asyncHandler } = require('../utils/responseHelper');
+const { notifyProductModerationResult } = require('../services/emailService');
 
 const toSlug = (value) =>
   value
@@ -45,24 +47,28 @@ const createProduct = asyncHandler(async (req, res) => {
     isPublished: Boolean(req.body.isPublished)
   };
 
-  if (req.file) {
+  // Support both upload.single('file') and upload.fields([{name:'file'},{name:'coverImage'}])
+  const primaryFile = req.file || (req.files && req.files['file'] && req.files['file'][0]);
+  const coverImageFile = req.files && req.files['coverImage'] && req.files['coverImage'][0];
+
+  if (primaryFile) {
     if (productType === 'physical') {
       productDoc.media = {
-        demoVideoUrl: `uploads/${req.file.filename}`
+        demoVideoUrl: `uploads/${primaryFile.filename}`
       };
     } else {
       productDoc.files = {
-        originalFilePath: `uploads/${req.file.filename}`,
-        fileName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        checksum: createChecksumFromFile(req.file.path)
+        originalFilePath: `uploads/${primaryFile.filename}`,
+        fileName: primaryFile.originalname,
+        mimeType: primaryFile.mimetype,
+        checksum: createChecksumFromFile(primaryFile.path)
       };
 
-      if (req.file.mimetype === 'application/pdf') {
+      if (primaryFile.mimetype === 'application/pdf') {
         try {
-          const watermarkedFileName = `wm-${req.file.filename}`;
+          const watermarkedFileName = `wm-${primaryFile.filename}`;
           await addPdfWatermark({
-            inputPath: req.file.path,
+            inputPath: primaryFile.path,
             watermarkText: `CreatorOS • ${req.user.username}`,
             outputFileName: watermarkedFileName
           });
@@ -72,6 +78,12 @@ const createProduct = asyncHandler(async (req, res) => {
         }
       }
     }
+  }
+
+  // Save cover image if provided
+  if (coverImageFile) {
+    if (!productDoc.media) productDoc.media = {};
+    productDoc.media.coverImage = `uploads/${coverImageFile.filename}`;
   }
 
   if ((process.env.ENABLE_AI_SERVICES || 'true') === 'true') {
@@ -86,6 +98,15 @@ const createProduct = asyncHandler(async (req, res) => {
   }
 
   const product = await Product.create(productDoc);
+
+  // Notify admin about new product submission
+  try {
+    const { notifyAdminNewProduct } = require('../services/emailService');
+    await notifyAdminNewProduct(req.user, product);
+  } catch (emailErr) {
+    console.error('[Product Controller] Failed to send admin product notification:', emailErr.message);
+  }
+
   return sendSuccess(res, { product }, 'Product created', 201);
 });
 
@@ -258,6 +279,17 @@ const moderateProductStatus = asyncHandler(async (req, res) => {
   product.moderation.reviewedAt = new Date();
 
   await product.save();
+
+  // Notify creator via email
+  try {
+    const creator = await User.findById(product.creator);
+    if (creator) {
+      await notifyProductModerationResult(creator, product, action === 'approve', reason);
+    }
+  } catch (emailErr) {
+    console.error('[Product Controller] Failed to send moderation email:', emailErr.message);
+  }
+
   return sendSuccess(res, { product }, `Product successfully ${action}d`);
 });
 

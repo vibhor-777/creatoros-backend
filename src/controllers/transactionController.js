@@ -72,8 +72,8 @@ const verifyPayment = asyncHandler(async (req, res) => {
 
   const platformFee = Math.round(transaction.amount * feePercent * 100) / 100;
 
-  transaction.status = 'on_hold'; // Held in 24hr escrow
-  transaction.holdReleaseAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  transaction.status = 'on_hold'; // Held in escrow (instant release ready)
+  transaction.holdReleaseAt = new Date(); // Instant — releasable immediately
   transaction.platformFee = platformFee;
   transaction.gatewayPaymentId = paymentId;
   transaction.purchasedAt = new Date();
@@ -176,7 +176,7 @@ const mockPurchase = asyncHandler(async (req, res) => {
     currency: product.pricing.currency || 'INR',
     platformFee: platformFee,
     status: 'on_hold',
-    holdReleaseAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    holdReleaseAt: new Date(), // Instant release
     purchasedAt: new Date()
   });
 
