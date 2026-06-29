@@ -11,8 +11,9 @@ router.post('/:productId/moderate', auth, authorize('admin'), productController.
 
 router.get('/:productId', productController.getProductById);
 router.get('/:productId/download', auth, productController.downloadProduct);
-router.post('/', auth, upload.fields([{ name: 'file', maxCount: 1 }, { name: 'coverImage', maxCount: 1 }]), productController.createProduct);
+router.post('/', auth, upload.fields([{ name: 'file', maxCount: 1 }, { name: 'coverImage', maxCount: 1 }, { name: 'gallery', maxCount: 4 }]), productController.createProduct);
 router.patch('/:productId', auth, productController.updateProduct);
+router.post('/:productId/duplicate', auth, productController.duplicateProduct);
 router.delete('/admin/clear-all', auth, authorize('admin'), productController.clearAllProducts);
 router.delete('/:productId', auth, productController.deleteProduct);
 

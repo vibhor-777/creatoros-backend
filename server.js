@@ -14,7 +14,20 @@ dotenv.config();
 const app = express();
 app.set('trust proxy', true);
 
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https://apis.google.com", "https://checkout.razorpay.com"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://use.fontawesome.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      childSrc: ["'self'", "https://checkout.razorpay.com"],
+      frameSrc: ["'self'", "https://checkout.razorpay.com"],
+      connectSrc: ["'self'", "https://api.studio-z.in", "http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:5500", "http://127.0.0.1:5500"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://use.fontawesome.com"]
+    }
+  }
+}));
 const allowedOrigins = [
   'https://studio-z.in',
   'https://www.studio-z.in',
@@ -24,6 +37,7 @@ const allowedOrigins = [
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:8080',
+  'http://localhost:5500',
   'http://127.0.0.1:5500',
   'http://127.0.0.1:8080'
 ];
@@ -62,6 +76,15 @@ app.get('/', (req, res) => {
   res.status(200).json({ status: 'success', message: 'CreatorOS API Server is running.' });
 });
 
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  message: { error: 'Too many accounts created from this IP, please try again after an hour.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/v1/auth/register', registerLimiter);
+
 // --- TELEMETRY TRAP: MODULE RESOLUTION ---
 console.log("[TELEMETRY 05] Attempting dynamic route registrations...");
 try {
@@ -78,6 +101,7 @@ try {
   app.use('/api/v1/chat', require('./src/routes/chatRoutes'));
   app.use('/api/v1/suggestions', require('./src/routes/suggestionRoutes'));
   app.use('/api/v1/stats', require('./src/routes/statsRoutes'));
+  app.use('/api/v1/financial-aid', require('./src/routes/financialAidRoutes'));
   console.log("[TELEMETRY 06] All dynamic routes successfully mounted.");
 } catch (routeError) {
   console.error("=================================================");

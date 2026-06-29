@@ -22,6 +22,47 @@ const getPublicStats = asyncHandler(async (req, res) => {
     totalTransactionsCompleted
   }, 'Public stats fetched');
 });
+
+const getLeaderboards = asyncHandler(async (req, res) => {
+  // Top sellers: sorted by lifetimeEarnings desc, limit 5
+  // We can include a fallback to show top creators overall if there are no Level 8+ users yet
+  let topSellers = await User.find({
+    role: { $in: ['creator', 'student'] },
+    isActive: true,
+    level: { $gte: 8 }
+  })
+  .select('fullName username avatarUrl level levelBadge lifetimeEarnings')
+  .sort({ lifetimeEarnings: -1 })
+  .limit(5);
+
+  if (topSellers.length === 0) {
+    // Fallback: show top earners overall so the leaderboard isn't empty during testing/bootstrap
+    topSellers = await User.find({
+      role: { $in: ['creator', 'student'] },
+      isActive: true
+    })
+    .select('fullName username avatarUrl level levelBadge lifetimeEarnings')
+    .sort({ lifetimeEarnings: -1 })
+    .limit(5);
+  }
+
+  // Top referrers: sorted by referralCount desc, limit 5
+  const topReferrers = await User.find({
+    role: { $in: ['creator', 'student'] },
+    isActive: true,
+    referralCount: { $gt: 0 }
+  })
+  .select('fullName username avatarUrl referralCount referralEarnings')
+  .sort({ referralCount: -1 })
+  .limit(5);
+
+  return sendSuccess(res, {
+    topSellers,
+    topReferrers
+  }, 'Leaderboards fetched');
+});
+
 module.exports = {
-  getPublicStats
+  getPublicStats,
+  getLeaderboards
 };

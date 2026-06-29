@@ -292,6 +292,161 @@ async function notifyProductModerationResult(user, product, approved, reason) {
   });
 }
 
+async function notifyAdminNewFinancialAid(aid, user) {
+  const subject = `[StudioZ] New Financial Aid Application — ${user.fullName}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a1411;color:#fff;border-radius:12px;overflow:hidden;">
+      <div style="background:linear-gradient(135deg,#FF3366,#B388FF);padding:20px 32px;">
+        <h2 style="margin:0;color:#fff;">🎓 New Financial Aid Application</h2>
+        <p style="margin:4px 0 0;opacity:0.8;font-size:13px;">StudioZ Aid Review</p>
+      </div>
+      <div style="padding:32px;">
+        <p>A student has requested financial aid for subscription plans. Details:</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;width:160px;">Student Name</td><td style="padding:10px;border-bottom:1px solid #1a2e28;font-weight:bold;">${user.fullName}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">Email</td><td style="padding:10px;border-bottom:1px solid #1a2e28;">${user.email}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">Target Plan</td><td style="padding:10px;border-bottom:1px solid #1a2e28;font-weight:bold;color:#B388FF;">${aid.targetPlan || 'Core'}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">Monthly Income</td><td style="padding:10px;border-bottom:1px solid #1a2e28;font-weight:bold;">₹${aid.monthlyIncome}</td></tr>
+          <tr><td style="padding:10px;border-bottom:1px solid #1a2e28;color:#A0AAB2;">How it helps</td><td style="padding:10px;border-bottom:1px solid #1a2e28;font-size:13px;">${aid.howHelpful}</td></tr>
+          <tr><td style="padding:10px;color:#A0AAB2;">Why can't afford</td><td style="padding:10px;font-size:13px;">${aid.whyAfford}</td></tr>
+        </table>
+        <a href="https://admin.studio-z.in" style="display:inline-block;background:linear-gradient(135deg,#FF3366,#B388FF);color:#fff;padding:12px 24px;border-radius:30px;text-decoration:none;font-weight:bold;margin-top:8px;">Open Admin Dashboard →</a>
+      </div>
+    </div>
+  `;
+
+  await sendMail({ to: ADMIN_EMAIL, subject, html, text: `New Financial Aid from ${user.fullName} (${user.email})` });
+}
+
+async function notifyUserFinancialAidResult(user, approved, reason) {
+  const tier = user.subscriptionTier || 'Core';
+  const subject = approved
+    ? `[StudioZ] Financial Aid Granted — Congratulations!`
+    : `[StudioZ] Financial Aid Application Status`;
+  
+  const html = approved
+    ? `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a1411;color:#fff;border-radius:12px;overflow:hidden;">
+        <div style="background:linear-gradient(135deg,#00E676,#00C853);padding:20px 32px;">
+          <h2 style="margin:0;color:#000;">🎉 Financial Aid Granted</h2>
+          <p style="margin:4px 0 0;opacity:0.8;font-size:13px;color:#000;">StudioZ Support</p>
+        </div>
+        <div style="padding:32px;">
+          <p>Hello <strong>${user.fullName}</strong>,</p>
+          <p>We are pleased to inform you that your request for Financial Aid has been approved!</p>
+          <div style="background:#0e1b17;border:1px solid #00E676;padding:16px;border-radius:8px;margin:16px 0;">
+            <strong style="color:#00E676;">🌟 ${tier} Creator Access Active</strong>
+            <div style="font-size:12px;color:#A0AAB2;margin-top:4px;">Unlocked for 30 days (renewable)</div>
+          </div>
+          <p>Your 30-day access to the ${tier} subscription tier is now active. Explore the dashboard to start listing products, managing your store, and accessing premium tools.</p>
+          <a href="https://studio-z.in/#/dashboard" style="display:inline-block;background:linear-gradient(135deg,#00E676,#00C853);color:#000;padding:12px 24px;border-radius:30px;text-decoration:none;font-weight:bold;margin-top:16px;">View Dashboard →</a>
+        </div>
+      </div>
+    `
+    : `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#0a1411;color:#fff;border-radius:12px;overflow:hidden;">
+        <div style="background:#FF3366;padding:20px 32px;">
+          <h2 style="margin:0;color:#fff;">Financial Aid Request</h2>
+          <p style="margin:4px 0 0;opacity:0.8;font-size:13px;">StudioZ Support</p>
+        </div>
+        <div style="padding:32px;">
+          <p>Hello <strong>${user.fullName}</strong>,</p>
+          <p>Thank you for applying for financial aid on StudioZ. Unfortunately, after auditing your details, we could not approve your request at this time.</p>
+          ${reason ? `<div style="background:#0e1b17;border-left:3px solid #FF3366;padding:12px 16px;border-radius:4px;margin:16px 0;"><strong>Reason:</strong> ${reason}</div>` : ''}
+          <p>You are welcome to submit another request with more detailed explanations in the future.</p>
+        </div>
+      </div>
+    `;
+
+  await sendMail({ to: user.email, subject, html, text: approved ? 'Financial aid granted' : 'Financial aid request update' });
+}
+
+async function sendProductDeliveryEmail(buyer, product, transaction) {
+  const email = buyer.email;
+  if (!email) return;
+
+  const jwt = require('jsonwebtoken');
+  const token = jwt.sign({ sub: buyer._id.toString() }, process.env.JWT_SECRET, { expiresIn: '7d' });
+  const downloadLink = `https://api.studio-z.in/api/v1/products/${product._id}/download?token=${token}`;
+
+  const subject = `[StudioZ] 📦 Here is your download: "${product.title}"`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#010108;color:#fff;border-radius:12px;overflow:hidden;border:1px solid #1a2e28;">
+      <div style="background:linear-gradient(135deg,#00E676,#B388FF);padding:24px 32px;text-align:center;">
+        <h2 style="margin:0;color:#000;font-weight:800;">VAULT DELIVERY 📦</h2>
+        <p style="margin:4px 0 0;opacity:0.8;font-size:13px;color:#000;font-weight:600;">StudioZ Instant File Delivery</p>
+      </div>
+      <div style="padding:32px;">
+        <p>Hello <strong>${buyer.fullName || 'Student'}</strong>,</p>
+        <p>Thank you for your purchase! Your payment for <strong>"${product.title}"</strong> has been successfully processed.</p>
+        <p>Your digital file is ready to download. For safety and copyright protection, this PDF is protected by your dynamic personal student watermark.</p>
+        
+        <div style="background:rgba(255,255,255,0.02);border:1.5px solid #39FF14;padding:20px;border-radius:12px;margin:24px 0;text-align:center;">
+          <strong style="font-size:18px;color:#39FF14;display:block;margin-bottom:8px;font-family:monospace;">${product.title}</strong>
+          <span style="font-size:12px;color:#A0AAB2;display:block;margin-bottom:16px;">Sold by ${product.creator?.fullName || 'Verified Student Creator'}</span>
+          
+          <a href="${downloadLink}" style="display:inline-block;background:#39FF14;color:#000;padding:12px 28px;border-radius:0px;text-decoration:none;font-weight:bold;font-size:14px;font-family:monospace;box-shadow:0 0 15px rgba(57,255,20,0.4);">[ DOWNLOAD DIGITAL FILE ]</a>
+        </div>
+        
+        <p style="font-size:12px;color:#A0AAB2;background:rgba(255,255,255,0.01);padding:12px;border-radius:0px;border-left:3px solid #fb3640;font-family:monospace;">
+          ⚠️ SECURITY NOTICE: Your copy is digitally stamped with your name, email address, and Transaction ID (${transaction._id}). Sharing, redistributing, or leaking this document violates the student honor code and will trigger automatic account termination.
+        </p>
+      </div>
+      <div style="padding:16px 32px;background:#050e0a;font-size:11px;color:#A0AAB2;font-family:monospace;text-align:center;">
+        StudioZ | Unified Student Economy | admin@studio-z.in
+      </div>
+    </div>
+  `;
+
+  await sendMail({ to: email, subject, html, text: `Your download link for "${product.title}" is: ${downloadLink}` });
+}
+
+async function sendMonthlyEarningsReportEmail(user, monthlyEarnings, salesCount) {
+  const email = user.email;
+  if (!email) return;
+
+  const badge = user.levelBadge || '🌱';
+  const subject = `[StudioZ] 📈 Your Monthly Creator Report — Level ${user.level} ${badge}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;background:#010108;color:#fff;border-radius:12px;overflow:hidden;border:1px solid #1a2e28;">
+      <div style="background:linear-gradient(135deg,#00E676,#B388FF);padding:24px 32px;text-align:center;">
+        <h2 style="margin:0;color:#000;font-weight:800;">MONTHLY CREATOR REPORT 📈</h2>
+        <p style="margin:4px 0 0;opacity:0.8;font-size:13px;color:#000;font-weight:600;">Passive Retention &amp; Growth</p>
+      </div>
+      <div style="padding:32px;">
+        <p>Hello <strong>${user.fullName || 'Student'}</strong>,</p>
+        <p>Here is your StudioZ Creator performance report for the past 30 days. Keep sharing your store link to grow your student audience!</p>
+        
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:24px 0;">
+          <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);padding:16px;text-align:center;border-radius:8px;">
+            <span style="font-size:11px;color:#A0AAB2;display:block;">MONTHLY REVENUE</span>
+            <strong style="font-size:24px;color:#39FF14;display:block;margin-top:4px;">₹${monthlyEarnings.toLocaleString()}</strong>
+          </div>
+          <div style="background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.05);padding:16px;text-align:center;border-radius:8px;">
+            <span style="font-size:11px;color:#A0AAB2;display:block;">PRODUCTS SOLD</span>
+            <strong style="font-size:24px;color:#39FF14;display:block;margin-top:4px;">${salesCount}</strong>
+          </div>
+        </div>
+
+        <div style="background:rgba(255,255,255,0.02);border:1.5px solid #B388FF;padding:20px;border-radius:12px;margin:24px 0;text-align:center;">
+          <span style="font-size:12px;color:#A0AAB2;display:block;">CURRENT RANK</span>
+          <strong style="font-size:20px;color:#B388FF;display:block;margin:6px 0;">Level ${user.level} ${badge}</strong>
+          <span style="font-size:12px;color:#A0AAB2;display:block;">Lifetime Earnings: ₹${(user.lifetimeEarnings || 0).toLocaleString()}</span>
+        </div>
+
+        <p style="text-align:center;margin-top:24px;">
+          <a href="https://studio-z.in/#/dashboard" style="display:inline-block;background:#39FF14;color:#000;padding:12px 28px;border-radius:0px;text-decoration:none;font-weight:bold;font-size:14px;font-family:monospace;box-shadow:0 0 15px rgba(57,255,20,0.3);">[ VISIT CREATOR STUDIO ]</a>
+        </p>
+      </div>
+      <div style="padding:16px 32px;background:#050e0a;font-size:11px;color:#A0AAB2;font-family:monospace;text-align:center;">
+        StudioZ | Unified Student Economy | admin@studio-z.in
+      </div>
+    </div>
+  `;
+
+  await sendMail({ to: email, subject, html, text: `Monthly Report: You earned ₹${monthlyEarnings} this month on StudioZ!` });
+}
+
 module.exports = {
   notifyAdminNewVerification,
   notifyAdminNewPayment,
@@ -300,6 +455,10 @@ module.exports = {
   sendWelcomeEmail,
   sendVerificationOtp,
   notifyProductModerationResult,
+  notifyAdminNewFinancialAid,
+  notifyUserFinancialAidResult,
+  sendProductDeliveryEmail,
+  sendMonthlyEarningsReportEmail
 };
 
 

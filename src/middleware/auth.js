@@ -2,6 +2,19 @@ const jwt = require('jsonwebtoken');
 const { sendError } = require('../utils/responseHelper');
 const User = require('../models/User');
 
+const checkSubscriptionExpiry = async (user) => {
+  if (user && user.subscriptionTier !== 'Starter' && user.subscriptionExpiresAt && new Date(user.subscriptionExpiresAt) < new Date()) {
+    user.subscriptionTier = 'Starter';
+    user.subscriptionExpiresAt = null;
+    user.isTrial = false;
+    user.billingCycle = 'monthly';
+    if (user.financialAidStatus === 'approved') {
+      user.financialAidStatus = 'none';
+    }
+    await user.save();
+  }
+};
+
 const extractToken = (req) => {
   const authHeader = req.headers.authorization || '';
   if (authHeader.startsWith('Bearer ')) {
@@ -33,6 +46,8 @@ const auth = async (req, res, next) => {
     if (!user) {
       return sendError(res, 'User account not found', 401);
     }
+
+    await checkSubscriptionExpiry(user);
 
     if (!user.isActive) {
       return sendError(res, 'User account is deactivated', 403);
@@ -77,6 +92,7 @@ const optionalAuth = async (req, res, next) => {
     const user = await User.findById(decoded.sub).select('-password');
 
     if (user && user.isActive) {
+      await checkSubscriptionExpiry(user);
       req.user = user;
     }
     return next();

@@ -57,6 +57,39 @@ const optimizeListing = asyncHandler(async (req, res) => {
     return sendError(res, 'title and description are required', 400);
   }
 
+  // Enforce Subscription Limits for AI Optimizer
+  const User = require('../models/User');
+  const user = await User.findById(req.user._id);
+  if (!user) {
+    return sendError(res, 'User session not found', 401);
+  }
+
+  const tier = user.subscriptionTier || 'Starter';
+  if (tier === 'Starter') {
+    return sendError(res, 'AI Optimizer is not available on the Starter plan. Please upgrade to Core, Elite, or Nexus.', 403);
+  }
+
+  const now = new Date();
+  const lastUsed = user.aiOptimizerUsage?.lastUsedAt;
+  const isSameDay = lastUsed && 
+    now.getDate() === lastUsed.getDate() && 
+    now.getMonth() === lastUsed.getMonth() && 
+    now.getFullYear() === lastUsed.getFullYear();
+
+  let dailyCount = isSameDay ? (user.aiOptimizerUsage?.count || 0) : 0;
+  if (tier === 'Core' && dailyCount >= 1) {
+    return sendError(res, 'Daily AI Optimizer limit (1×/day) reached for Core tier. Please upgrade to Elite or Nexus.', 403);
+  } else if (tier === 'Elite' && dailyCount >= 5) {
+    return sendError(res, 'Daily AI Optimizer limit (5×/day) reached for Elite tier. Please upgrade to Nexus.', 403);
+  }
+
+  // Increment usage count
+  user.aiOptimizerUsage = {
+    count: dailyCount + 1,
+    lastUsedAt: now
+  };
+  await user.save();
+
   const apiKey = getSafeApiKey();
   if (!apiKey) {
     console.warn('GEMINI_API_KEY not configured, returning original values as fallback.');

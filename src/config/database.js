@@ -100,22 +100,30 @@ const seedAdminUser = async () => {
 
 const connectDB = async () => {
   try {
-    // Fallback support: Dono me se jo bhi key mile, use connect karo
     const dbURI = process.env.MONGODB_URI || process.env.MONGO_URI;
     
-    if (!dbURI) {
-      console.error("CRITICAL ERROR: Database URI string missing in Env Variables!");
-      process.exit(1); 
+    try {
+      if (!dbURI) {
+        throw new Error("Database URI string missing in Env Variables");
+      }
+      console.log("[DB] Attempting connection to MongoDB Atlas...");
+      const conn = await mongoose.connect(dbURI, { serverSelectionTimeoutMS: 5000 });
+      console.log(`MongoDB Connected Safely: ${conn.connection.host}`);
+      await seedAdminUser();
+      return;
+    } catch (err) {
+      console.warn(`[DB] Database connection failed: ${err.message}. Starting in-memory database fallback...`);
+      const { MongoMemoryServer } = require('mongodb-memory-server');
+      const mongoServer = await MongoMemoryServer.create();
+      const mongoUri = mongoServer.getUri();
+      console.log(`[DB] In-Memory MongoDB Server started on URI: ${mongoUri}`);
+      const conn = await mongoose.connect(mongoUri);
+      console.log(`MongoDB Connected Safely (In-Memory): ${conn.connection.host}`);
+      await seedAdminUser();
     }
-
-    const conn = await mongoose.connect(dbURI);
-    console.log(`MongoDB Connected Safely: ${conn.connection.host}`);
-
-    // Auto seed admin user on connect
-    await seedAdminUser();
   } catch (error) {
     console.error(`Database Connection Initialization Failed: ${error.message}`);
-    process.exit(1); // Production ko clean exit do taaki log generate ho sakein
+    process.exit(1);
   }
 };
 

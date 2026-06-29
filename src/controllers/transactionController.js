@@ -1,7 +1,72 @@
 const Product = require('../models/Product');
 const Transaction = require('../models/Transaction');
+const User = require('../models/User');
+const Wallet = require('../models/Wallet');
+const emailService = require('../services/emailService');
 const { createOrder, verifySignature } = require('../services/razorpayService');
 const { sendSuccess, sendError, asyncHandler } = require('../utils/responseHelper');
+
+async function recomputeUserLevel(user) {
+  const earnings = user.lifetimeEarnings || 0;
+  let newLevel = 1;
+  let newBadge = '🌱';
+
+  if (earnings >= 1000000) { newLevel = 10; newBadge = '⭐'; }
+  else if (earnings >= 500000) { newLevel = 9; newBadge = '🔱'; }
+  else if (earnings >= 300000) { newLevel = 8; newBadge = '🎖️'; }
+  else if (earnings >= 150000) { newLevel = 7; newBadge = '👑'; }
+  else if (earnings >= 80000) { newLevel = 6; newBadge = '🌟'; }
+  else if (earnings >= 40000) { newLevel = 5; newBadge = '🏆'; }
+  else if (earnings >= 15000) { newLevel = 4; newBadge = '💎'; }
+  else if (earnings >= 5000) { newLevel = 3; newBadge = '🔥'; }
+  else if (earnings >= 1000) { newLevel = 2; newBadge = '⚡'; }
+
+  const oldLevel = user.level || 1;
+  user.level = newLevel;
+  user.levelBadge = newBadge;
+  await user.save();
+  return { levelUp: newLevel > oldLevel, newLevel, newBadge };
+}
+
+async function processTransactionCompletion(transaction, buyerUser, sellerUser) {
+  const product = await Product.findById(transaction.product).populate('creator');
+  
+  if (product && product.productType === 'digital') {
+    // Digital products: Go straight to released, credit wallet instantly!
+    transaction.status = 'released';
+    await transaction.save();
+
+    // Credit seller's wallet
+    const netAmount = transaction.amount - (transaction.platformFee || 0);
+    const sellerWallet = await Wallet.findOne({ user: transaction.seller });
+    if (sellerWallet) {
+      sellerWallet.availableBalance += netAmount;
+      sellerWallet.addEntry({
+        type: 'credit',
+        source: 'purchase',
+        amount: netAmount,
+        referenceTransaction: transaction._id,
+        note: `Instant release for digital product sale: ${product.title}`
+      });
+      await sellerWallet.save();
+    }
+
+    // Increment seller lifetime earnings and recompute level
+    if (sellerUser) {
+      sellerUser.lifetimeEarnings = (sellerUser.lifetimeEarnings || 0) + netAmount;
+      await recomputeUserLevel(sellerUser);
+    }
+
+    // Send product delivery email to buyer!
+    await emailService.sendProductDeliveryEmail(buyerUser, product, transaction);
+
+  } else {
+    // Physical products: keep on_hold with 24h escrow hold
+    transaction.status = 'on_hold';
+    transaction.holdReleaseAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    await transaction.save();
+  }
+}
 
 const createPaymentOrder = asyncHandler(async (req, res) => {
   const { productId } = req.body;
@@ -62,34 +127,33 @@ const verifyPayment = asyncHandler(async (req, res) => {
     return sendError(res, 'Payment signature verification failed', 400);
   }
 
-  const User = require('../models/User');
   const sellerUser = await User.findById(transaction.seller);
   const tier = sellerUser?.subscriptionTier || 'Starter';
-  let feePercent = 0.05;
-  if (tier === 'Core') feePercent = 0.03;
-  else if (tier === 'Elite') feePercent = 0.015;
+  let feePercent = 0.15;
+  if (tier === 'Core') feePercent = 0.08;
+  else if (tier === 'Elite') feePercent = 0.03;
   else if (tier === 'Nexus') feePercent = 0.0;
 
   const platformFee = Math.round(transaction.amount * feePercent * 100) / 100;
 
-  transaction.status = 'on_hold'; // Held in escrow (instant release ready)
-  transaction.holdReleaseAt = new Date(); // Instant — releasable immediately
   transaction.platformFee = platformFee;
   transaction.gatewayPaymentId = paymentId;
   transaction.purchasedAt = new Date();
-  await transaction.save();
+
+  const buyerUser = await User.findById(transaction.buyer);
+  await processTransactionCompletion(transaction, buyerUser, sellerUser);
 
   if (transaction.product) {
     transaction.product.metrics.purchases += 1;
     await transaction.product.save();
   }
 
-  return sendSuccess(res, { transaction }, 'Payment verified and held in escrow');
+  return sendSuccess(res, { transaction }, 'Payment verified successfully');
 });
 
 const releaseEscrow = asyncHandler(async (req, res) => {
   const { transactionId } = req.params;
-  const transaction = await Transaction.findById(transactionId).populate('seller');
+  const transaction = await Transaction.findById(transactionId).populate('seller').populate('product');
   if (!transaction) {
     return sendError(res, 'Transaction not found', 404);
   }
@@ -97,9 +161,6 @@ const releaseEscrow = asyncHandler(async (req, res) => {
   if (transaction.status !== 'on_hold') {
     return sendError(res, `Transaction status is ${transaction.status}, cannot release escrow.`, 400);
   }
-
-  const Wallet = require('../models/Wallet');
-  const User = require('../models/User');
 
   const sellerWallet = await Wallet.findOne({ user: transaction.seller._id });
   const netAmount = transaction.amount - (transaction.platformFee || 0);
@@ -116,12 +177,22 @@ const releaseEscrow = asyncHandler(async (req, res) => {
     await sellerWallet.save();
   }
 
-  await User.findByIdAndUpdate(transaction.seller._id, {
-    $inc: { lifetimeEarnings: netAmount }
-  });
+  const sellerUser = await User.findById(transaction.seller._id);
+  if (sellerUser) {
+    sellerUser.lifetimeEarnings = (sellerUser.lifetimeEarnings || 0) + netAmount;
+    await recomputeUserLevel(sellerUser);
+  }
 
   transaction.status = 'released';
   await transaction.save();
+
+  // If digital product, send email as fallback
+  if (transaction.product && transaction.product.productType === 'digital') {
+    const buyerUser = await User.findById(transaction.buyer);
+    if (buyerUser) {
+      await emailService.sendProductDeliveryEmail(buyerUser, transaction.product, transaction);
+    }
+  }
 
   return sendSuccess(res, { transaction }, 'Escrow released successfully');
 });
@@ -134,7 +205,6 @@ const mockPurchase = asyncHandler(async (req, res) => {
     return sendError(res, 'Product not found', 404);
   }
 
-  const User = require('../models/User');
   let buyerId;
   if (req.user) {
     buyerId = req.user._id;
@@ -159,9 +229,9 @@ const mockPurchase = asyncHandler(async (req, res) => {
 
   const sellerUser = await User.findById(product.creator);
   const tier = sellerUser?.subscriptionTier || 'Starter';
-  let feePercent = 0.05;
-  if (tier === 'Core') feePercent = 0.03;
-  else if (tier === 'Elite') feePercent = 0.015;
+  let feePercent = 0.15;
+  if (tier === 'Core') feePercent = 0.08;
+  else if (tier === 'Elite') feePercent = 0.03;
   else if (tier === 'Nexus') feePercent = 0.0;
 
   const platformFee = Math.round(product.pricing.amount * feePercent * 100) / 100;
@@ -175,15 +245,16 @@ const mockPurchase = asyncHandler(async (req, res) => {
     amount: product.pricing.amount,
     currency: product.pricing.currency || 'INR',
     platformFee: platformFee,
-    status: 'on_hold',
-    holdReleaseAt: new Date(), // Instant release
     purchasedAt: new Date()
   });
+
+  const buyerUser = await User.findById(buyerId);
+  await processTransactionCompletion(transaction, buyerUser, sellerUser);
 
   product.metrics.purchases += 1;
   await product.save();
 
-  return sendSuccess(res, { transaction }, 'Mock purchase successful. Payment held in escrow.');
+  return sendSuccess(res, { transaction }, 'Mock purchase completed.');
 });
 
 const getMyTransactions = asyncHandler(async (req, res) => {
@@ -216,5 +287,6 @@ module.exports = {
   releaseEscrow,
   mockPurchase,
   getMyTransactions,
-  getAllTransactions
+  getAllTransactions,
+  recomputeUserLevel
 };

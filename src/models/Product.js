@@ -64,10 +64,10 @@ const productSchema = new mongoose.Schema(
       demoVideoUrl: { type: String, trim: true }
     },
     files: {
-      originalFilePath: { type: String, trim: true },
-      watermarkedFilePath: { type: String, trim: true },
-      fileData: { type: String },
-      watermarkedFileData: { type: String },
+      originalFilePath: { type: String, trim: true, select: false },
+      watermarkedFilePath: { type: String, trim: true, select: false },
+      fileData: { type: String, select: false },
+      watermarkedFileData: { type: String, select: false },
       fileName: { type: String, trim: true },
       mimeType: { type: String, trim: true },
       checksum: { type: String, trim: true }
@@ -97,6 +97,30 @@ const productSchema = new mongoose.Schema(
     timestamps: true
   }
 );
+
+productSchema.set('toJSON', {
+  transform: (doc, ret, options) => {
+    if (ret.files) {
+      delete ret.files.originalFilePath;
+      delete ret.files.watermarkedFilePath;
+      delete ret.files.fileData;
+      delete ret.files.watermarkedFileData;
+    }
+    return ret;
+  }
+});
+
+productSchema.set('toObject', {
+  transform: (doc, ret, options) => {
+    if (ret.files) {
+      delete ret.files.originalFilePath;
+      delete ret.files.watermarkedFilePath;
+      delete ret.files.fileData;
+      delete ret.files.watermarkedFileData;
+    }
+    return ret;
+  }
+});
 
 productSchema.index({ title: 'text', description: 'text', tags: 'text' });
 

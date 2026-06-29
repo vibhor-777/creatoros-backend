@@ -17,6 +17,7 @@ router.post('/admin/users/:userId/subscription', auth, authorize('admin'), userC
 router.post('/admin/blocked-ips', auth, authorize('admin'), userController.blockIp);
 router.get('/admin/blocked-ips', auth, authorize('admin'), userController.listBlockedIps);
 router.delete('/admin/blocked-ips/:id', auth, authorize('admin'), userController.unblockIp);
+router.post('/admin/run-monthly-jobs', auth, authorize('admin'), userController.runMonthlyJobs);
 
 
 // User reporting routes

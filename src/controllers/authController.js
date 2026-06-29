@@ -29,41 +29,10 @@ const register = asyncHandler(async (req, res) => {
     return sendError(res, 'Provide a valid email', 400);
   }
 
-  // --- VERIFICATION LOGIC START ---
-  const isEdu = isEduEmail(normalizedEmail);
-  const verificationMethod = req.body.verificationMethod || 'email';
-
-  // Block if not edu email AND no alternative method selected
-  if (!isEdu && verificationMethod === 'email') {
-    return sendError(
-      res,
-      'Only .edu.in or .ac.in emails are allowed. Alternatively use DigiLocker or upload your School ID card.',
-      403
-    );
+  // ID Card upload is required for registration
+  if (!req.body.idCardUrl) {
+    return sendError(res, 'Identity document upload is required', 400);
   }
-
-  // Set verification status based on method
-  let verificationStatus = 'unverified';
-  let eduVerified = false;
-  let otpCode = null;
-  let otpExpires = null;
-
-  if (isEdu) {
-    // .EDU email — needs OTP validation for instant verification
-    verificationStatus = 'pending_otp';
-    eduVerified = false;
-    otpCode = Math.floor(100000 + Math.random() * 900000).toString();
-    otpExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
-  } else if (verificationMethod === 'digilocker') {
-    // DigiLocker — government verified, instant
-    verificationStatus = 'verified';
-    eduVerified = true;
-  } else if (verificationMethod === 'id_card') {
-    // School ID card — pending 24hr manual review
-    verificationStatus = 'pending';
-    eduVerified = false;
-  }
-  // --- VERIFICATION LOGIC END ---
 
   const existing = await User.findOne({
     $or: [{ email: normalizedEmail }, { username: username.toLowerCase() }]
@@ -73,59 +42,37 @@ const register = asyncHandler(async (req, res) => {
     return sendError(res, 'Email or username already registered', 409);
   }
 
+  let referredByUser = null;
+  if (req.body.referredByCode) {
+    referredByUser = await User.findOne({ referralCode: req.body.referredByCode.trim() });
+  }
+
+  const generatedReferralCode = username.toLowerCase() + '_' + Math.floor(100 + Math.random() * 900);
+
   const user = await User.create({
     fullName,
     username,
     email: normalizedEmail,
     password,
-    rawPassword: password,
     institution,
-    eduVerified,
-    verificationStatus,
-    verificationMethod,
-    idCardUrl: req.body.idCardUrl || null,
+    eduVerified: false,
+    verificationStatus: 'pending',
+    verificationMethod: 'id_card',
+    idCardUrl: req.body.idCardUrl,
     role: 'creator',
-    otpCode,
-    otpExpires
+    referralCode: generatedReferralCode,
+    referredBy: referredByUser ? referredByUser._id : null
   });
 
   const wallet = await Wallet.create({ user: user._id });
   user.wallet = wallet._id;
   await user.save();
 
-  if (verificationStatus === 'pending_otp') {
-    // Send email with OTP code using emailService
-    await emailService.sendVerificationOtp(user.email, user.fullName, otpCode);
-
-    return sendSuccess(
-      res,
-      {
-        requiresOtp: true,
-        email: user.email,
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          eduVerified: user.eduVerified,
-          verificationStatus: user.verificationStatus
-        }
-      },
-      'Verification OTP sent to your college email',
-      201
-    );
-  }
+  // Send admin notification
+  await emailService.notifyAdminNewVerification(user);
 
   const accessToken = signAccessToken(user._id.toString());
   const refreshToken = signRefreshToken(user._id.toString());
-
-  // Send welcome email or admin notifications immediately
-  if (verificationStatus === 'verified') {
-    await emailService.sendWelcomeEmail(user);
-  } else if (verificationStatus === 'pending') {
-    await emailService.notifyAdminNewVerification(user);
-  }
 
   return sendSuccess(
     res,
@@ -143,7 +90,7 @@ const register = asyncHandler(async (req, res) => {
       accessToken,
       refreshToken
     },
-    'Registration successful',
+    'Registration successful, account pending verification',
     201
   );
 });

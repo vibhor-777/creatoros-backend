@@ -23,6 +23,23 @@ const createProduct = asyncHandler(async (req, res) => {
     return sendError(res, 'title, description, category and amount are required', 400);
   }
 
+  const coverImageFile = req.files && req.files['coverImage'] && req.files['coverImage'][0];
+  if (!coverImageFile) {
+    return sendError(res, 'Cover image is required', 400);
+  }
+
+  // Enforce active listing limits (API bypass prevention)
+  const isPublished = req.body.isPublished === undefined ? true : Boolean(req.body.isPublished);
+  if (isPublished) {
+    const activeCount = await Product.countDocuments({ creator: req.user._id, isPublished: true });
+    const tier = req.user.subscriptionTier || 'Starter';
+    if (tier === 'Starter' && activeCount >= 3) {
+      return sendError(res, 'Active listing limit (3) exceeded for Starter tier. Please upgrade to Core, Elite, or Nexus.', 403);
+    } else if (tier === 'Core' && activeCount >= 15) {
+      return sendError(res, 'Active listing limit (15) exceeded for Core tier. Please upgrade to Elite or Nexus.', 403);
+    }
+  }
+
   const moderation = moderateProduct({ title, description });
   if (!moderation.approved) {
     return sendError(res, 'Product did not pass moderation', 422, moderation);
@@ -49,7 +66,6 @@ const createProduct = asyncHandler(async (req, res) => {
 
   // Support both upload.single('file') and upload.fields([{name:'file'},{name:'coverImage'}])
   const primaryFile = req.file || (req.files && req.files['file'] && req.files['file'][0]);
-  const coverImageFile = req.files && req.files['coverImage'] && req.files['coverImage'][0];
 
   if (primaryFile) {
     if (productType === 'physical') {
@@ -86,6 +102,13 @@ const createProduct = asyncHandler(async (req, res) => {
     productDoc.media.coverImage = `uploads/${coverImageFile.filename}`;
   }
 
+  // Save gallery images if provided (Step 3E)
+  const galleryFiles = req.files && req.files['gallery'];
+  if (galleryFiles && galleryFiles.length > 0) {
+    if (!productDoc.media) productDoc.media = {};
+    productDoc.media.gallery = galleryFiles.map(file => `uploads/${file.filename}`);
+  }
+
   if ((process.env.ENABLE_AI_SERVICES || 'true') === 'true') {
     try {
       const summary = await summarizeProductDescription(description);
@@ -107,7 +130,14 @@ const createProduct = asyncHandler(async (req, res) => {
     console.error('[Product Controller] Failed to send admin product notification:', emailErr.message);
   }
 
-  return sendSuccess(res, { product }, 'Product created', 201);
+  const productObj = product.toObject();
+  if (productObj.files) {
+    delete productObj.files.originalFilePath;
+    delete productObj.files.watermarkedFilePath;
+    delete productObj.files.fileData;
+    delete productObj.files.watermarkedFileData;
+  }
+  return sendSuccess(res, { product: productObj }, 'Product created', 201);
 });
 
 const listProducts = asyncHandler(async (req, res) => {
@@ -187,6 +217,18 @@ const updateProduct = asyncHandler(async (req, res) => {
     return sendError(res, 'Not authorized to update this product', 403);
   }
 
+  // Enforce active listing limits on draft publish
+  const willBePublished = req.body.isPublished !== undefined ? Boolean(req.body.isPublished) : product.isPublished;
+  if (willBePublished && !product.isPublished) {
+    const activeCount = await Product.countDocuments({ creator: req.user._id, isPublished: true });
+    const tier = req.user.subscriptionTier || 'Starter';
+    if (tier === 'Starter' && activeCount >= 3) {
+      return sendError(res, 'Active listing limit (3) exceeded for Starter tier. Please upgrade to Core, Elite, or Nexus.', 403);
+    } else if (tier === 'Core' && activeCount >= 15) {
+      return sendError(res, 'Active listing limit (15) exceeded for Core tier. Please upgrade to Elite or Nexus.', 403);
+    }
+  }
+
   const mutable = ['title', 'description', 'category', 'tags', 'phase', 'productType', 'isPublished'];
   mutable.forEach((field) => {
     if (req.body[field] !== undefined) {
@@ -201,8 +243,37 @@ const updateProduct = asyncHandler(async (req, res) => {
     product.pricing.discountPercent = Number(req.body.discountPercent);
   }
 
+  // If editing title, description, category, or amount, reset moderation to pending
+  let requiresReapproval = false;
+  if (req.body.title && req.body.title !== product.title) requiresReapproval = true;
+  if (req.body.description && req.body.description !== product.description) requiresReapproval = true;
+  if (req.body.category && req.body.category !== product.category) requiresReapproval = true;
+  if (req.body.amount !== undefined && Number(req.body.amount) !== product.pricing.amount) requiresReapproval = true;
+
+  if (requiresReapproval) {
+    product.moderation = {
+      status: 'pending',
+      reason: null,
+      reviewedBy: null,
+      reviewedAt: null
+    };
+    // Notify admin that an edit needs re-approval
+    try {
+      await emailService.notifyAdminNewProduct(req.user, product);
+    } catch(err) {
+      console.error('Failed to notify admin of product edit re-approval:', err.message);
+    }
+  }
+
   await product.save();
-  return sendSuccess(res, { product }, 'Product updated');
+  const productObj = product.toObject();
+  if (productObj.files) {
+    delete productObj.files.originalFilePath;
+    delete productObj.files.watermarkedFilePath;
+    delete productObj.files.fileData;
+    delete productObj.files.watermarkedFileData;
+  }
+  return sendSuccess(res, { product: productObj }, 'Product updated');
 });
 
 const deleteProduct = asyncHandler(async (req, res) => {
@@ -220,30 +291,68 @@ const deleteProduct = asyncHandler(async (req, res) => {
 });
 
 const downloadProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.productId);
+  const product = await Product.findById(req.params.productId).populate('creator').select('+files.fileData +files.originalFilePath');
   if (!product || !product.files) {
     return sendError(res, 'Download not available for this product', 404);
   }
 
-  // Database stored Base64 fallback (removes dependency on ephemeral disk storage)
+  const fileName = product.files.fileName || 'product-file';
+  const mimeType = product.files.mimeType || 'application/octet-stream';
+  const isPDF = fileName.toLowerCase().endsWith('.pdf') || mimeType === 'application/pdf';
+
+  // 1. Fetch transaction details to construct watermark metadata
+  const Transaction = require('../models/Transaction');
+  const tx = await Transaction.findOne({
+    buyer: req.user._id,
+    product: product._id,
+    status: { $in: ['released', 'on_hold', 'paid'] }
+  }).sort({ createdAt: -1 });
+
+  const isCreator = product.creator._id.toString() === req.user._id.toString();
+  if (!isCreator && !tx) {
+    return sendError(res, 'You must purchase this product to download it', 403);
+  }
+
+  const txId = tx ? tx._id.toString() : 'SELF-DOWNLOAD';
+  const watermarkText = `Secured for ${req.user.fullName || 'Student'} (${req.user.email || 'buyer@studio-z.in'}) | TxID: ${txId} | StudioZ Campus Safe`;
+
+  // 2. Database stored Base64 fallback (removes dependency on ephemeral disk storage)
   if (product.files.fileData) {
-    const fileBase64 = product.files.watermarkedFileData || product.files.fileData;
-    const fileName = product.files.fileName || 'product-file';
-    const mimeType = product.files.mimeType || 'application/octet-stream';
+    let fileBuffer = Buffer.from(product.files.fileData, 'base64');
     
-    const fileBuffer = Buffer.from(fileBase64, 'base64');
+    if (isPDF) {
+      const { addPdfWatermarkToBuffer } = require('../services/watermarkService');
+      try {
+        fileBuffer = await addPdfWatermarkToBuffer(fileBuffer, watermarkText, product.creator);
+      } catch (err) {
+        console.warn("[Watermarking Failed] Serving unwatermarked base64 fallback:", err.message);
+      }
+    }
     
-    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Type', isPDF ? 'application/pdf' : mimeType);
     res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
     return res.send(fileBuffer);
   }
 
-  // Ephemeral disk fallback
-  const filePath = product.files.watermarkedFilePath || product.files.originalFilePath;
+  // 3. Ephemeral disk fallback
+  const filePath = product.files.originalFilePath;
   if (!filePath || !fs.existsSync(filePath)) {
     return sendError(res, 'Product file not found on server disk', 404);
   }
-  return res.download(filePath, product.files.fileName || 'product-file');
+
+  let fileBuffer = fs.readFileSync(filePath);
+  if (isPDF) {
+    const { addPdfWatermarkToBuffer } = require('../services/watermarkService');
+    try {
+      fileBuffer = await addPdfWatermarkToBuffer(fileBuffer, watermarkText, product.creator);
+    } catch (err) {
+      console.warn("[Watermarking Failed] Serving unwatermarked disk fallback:", err.message);
+    }
+  }
+
+  res.setHeader('Content-Type', isPDF ? 'application/pdf' : mimeType);
+  res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+  return res.send(fileBuffer);
 });
 
 const getPendingProductsForAdmin = asyncHandler(async (req, res) => {
@@ -298,6 +407,83 @@ const clearAllProducts = asyncHandler(async (req, res) => {
   await Product.deleteMany({});
   return sendSuccess(res, null, 'All products deleted');
 });
+const duplicateProduct = asyncHandler(async (req, res) => {
+  const original = await Product.findById(req.params.productId).select('+files.fileData +files.originalFilePath +files.watermarkedFilePath +files.watermarkedFileData');
+  if (!original) {
+    return sendError(res, 'Product not found', 404);
+  }
+
+  if (original.creator.toString() !== req.user._id.toString() && req.user.role !== 'admin') {
+    return sendError(res, 'Not authorized to duplicate this product', 403);
+  }
+
+  // Enforce active listing limits on duplicate if published
+  if (original.isPublished) {
+    const activeCount = await Product.countDocuments({ creator: req.user._id, isPublished: true });
+    const tier = req.user.subscriptionTier || 'Starter';
+    if (tier === 'Starter' && activeCount >= 3) {
+      return sendError(res, 'Active listing limit (3) exceeded for Starter tier. Please upgrade to Core, Elite, or Nexus.', 403);
+    } else if (tier === 'Core' && activeCount >= 15) {
+      return sendError(res, 'Active listing limit (15) exceeded for Core tier. Please upgrade to Elite or Nexus.', 403);
+    }
+  }
+
+  const slugBase = toSlug(original.title + '-copy');
+  const slug = `${slugBase}-${Date.now().toString(36)}`;
+
+  const duplicated = new Product({
+    creator: req.user._id,
+    title: `${original.title} (Copy)`,
+    slug,
+    description: original.description,
+    category: original.category,
+    tags: original.tags,
+    phase: original.phase,
+    productType: original.productType,
+    pricing: {
+      amount: original.pricing.amount,
+      currency: original.pricing.currency,
+      discountPercent: original.pricing.discountPercent
+    },
+    inventory: {
+      stock: original.inventory.stock,
+      sku: original.inventory.sku,
+      isUnlimited: original.inventory.isUnlimited
+    },
+    media: {
+      coverImage: original.media.coverImage,
+      gallery: original.media.gallery,
+      demoVideoUrl: original.media.demoVideoUrl
+    },
+    files: {
+      originalFilePath: original.files.originalFilePath,
+      watermarkedFilePath: original.files.watermarkedFilePath,
+      fileData: original.files.fileData,
+      watermarkedFileData: original.files.watermarkedFileData,
+      fileName: original.files.fileName,
+      mimeType: original.files.mimeType,
+      checksum: original.files.checksum
+    },
+    moderation: {
+      status: 'pending', // Duplicate needs new approval
+      reason: null
+    },
+    isPublished: original.isPublished
+  });
+
+  await duplicated.save();
+
+  const productObj = duplicated.toObject();
+  if (productObj.files) {
+    delete productObj.files.originalFilePath;
+    delete productObj.files.watermarkedFilePath;
+    delete productObj.files.fileData;
+    delete productObj.files.watermarkedFileData;
+  }
+
+  return sendSuccess(res, { product: productObj }, 'Product duplicated successfully', 201);
+});
+
 module.exports = {
   clearAllProducts,
   createProduct,
@@ -307,5 +493,6 @@ module.exports = {
   deleteProduct,
   downloadProduct,
   getPendingProductsForAdmin,
-  moderateProduct: moderateProductStatus
+  moderateProduct: moderateProductStatus,
+  duplicateProduct
 };
